@@ -1,0 +1,114 @@
+[
+  {
+    "id": "v1_ChdIRzYxYXRyZ09KR2kxTWtQaFpmTGlBdxIXSEc2MWF0cmdPSkdpMU1rUGhaZkxpQXc",
+    "status": "requires_action",
+    "usage": {
+      "total_tokens": 1587,
+      "total_input_tokens": 1117,
+      "input_tokens_by_modality": [
+        {
+          "modality": "image",
+          "tokens": 1092
+        },
+        {
+          "modality": "text",
+          "tokens": 25
+        }
+      ],
+      "total_cached_tokens": 0,
+      "total_output_tokens": 32,
+      "total_tool_use_tokens": 0,
+      "total_thought_tokens": 438,
+      "raw_prompt_token": 4432,
+      "model_invocation_token_counts": [
+        {
+          "prompt_tokens_details": [
+            {
+              "modality": "text",
+              "tokens": 3340
+            },
+            {
+              "modality": "image",
+              "tokens": 1092
+            }
+          ],
+          "candidates_tokens_details": [
+            {
+              "modality": "text",
+              "tokens": 38
+            }
+          ],
+          "thoughts_tokens_details": [
+            {
+              "modality": "text",
+              "tokens": 438
+            }
+          ]
+        }
+      ],
+      "non_grounding_model_invocation_token_counts": [
+        {
+          "prompt_tokens_details": [
+            {
+              "modality": "text",
+              "tokens": 3340
+            },
+            {
+              "modality": "image",
+              "tokens": 1092
+            }
+          ],
+          "candidates_tokens_details": [
+            {
+              "modality": "text",
+              "tokens": 38
+            }
+          ],
+          "thoughts_tokens_details": [
+            {
+              "modality": "text",
+              "tokens": 438
+            }
+          ]
+        }
+      ]
+    },
+    "created": "2026-09-24T18:38:20Z",
+    "updated": "2026-09-24T18:38:20Z",
+    "service_tier": "standard",
+    "steps": [
+      {
+        "signature": "EvQJCvEJAWkUfROv2tutQCw7igTqMruHKK/Lj5jM/zOhkw784pxt1TmMvIwYsXNyEkqbQgdO2e7rjjKMvZjWJjgzpd1d8VDm3q1YOJCWypV3B1Un1mQ2TMVyQ3pZ/tMu2tqg+F0eOTxEFr/D+KQbMEei0GXfQplTSbiSXydSKYtK1v+RZLs88qW8f9Bmwf0md/nZvHqCo7Mslwn1gxWscCCylqaxQ3971vr+ts7Mse5HOoefHkqIx5FjQD/XJ1B4+pF7GLyCiHCJtqXCb4tX2x3x30N28VJIWSDVr8c0KF6E3+onZMPM6koF2NFb2G4qbZDp+oIRC30YMYD7UfMQPTRdtmva0Eaqos89zFu6+V8U2TIe2PGQ+n/blHn2/O3VKIRkPM5fyznQ+CV7Gq0zVmtK8JUZRLaDx/XWokPaVgxcMadOfG1MMMyhQLGaHdFTRuBRtqlHG0hZpWvX1awJ01pYrXPhgfit4uBgFX2FzLzISh91Ta5e4Wza0GJdkksQQtLWUwkE/Y2CdDtlkw3MJUZdyHew7U/w3dkDktwDY6IplPW2KqvdEwPkVSkAnL7rDcTKiNsuRjU5hCViOX+boVlLTed+5ESOXk/zqxhaIrL0gYNEcPk4NWXyzbtqLK1bMhLv4OclvVYH9g7fT/TSgPMFqKsV7yBpL+U1B08HzYBQQtSnJyKWz7g7pSz0c0SwaG2bQuFGcvKmecwIfev0FRkpLW0nsx7Bvw3sc/wNyPMiJdsz+MaZyDnMKJOCTpeOPv4rurACSpfxhsChLH1TutRwlbDrMIpbt15jmYG9UA1IdGT4lobl/LgMBQAtG7KTc98JmJfurcZA3Ykzlx6Y1MomcOqqY/f+A5zAjTwNGLz9W+JpampLeuWjgu+NLb5lAfA8Ean3WBwj/RzAwz09/YtgL61EW7NunGDc8C13GBstJVgr5L6snSMhBoa8q6moREWPZuyLtNMIOG8SmafZ3zYkf5PoUvqAXMsLui91seBY+oFSsMJRDRXmjgsWAF0nr9mDZHyn/Nl+MfbfFT/O+dZPX/gFBCDHxvrKf3l8bP4J3Dsi/kt2HrmPBT6wtS5uoK5QT1rUKDrXIZaYS/Uqe7TqaNhjY/iUh41HJjR1MEGnpEUwuOD+ZDN45oNIOmgSD3cEDNnoSEI0fpa6RXQuTFGPJw95Xv5k3xvY5LojUiOS7vj1+n0/BOwssvjTUaSN1PYeiViGYtlTTnbRHkYqtKqsoN/sMoKLSQZ0S1q4wy8L1TVK5IKfyNLBr9oai6wmVJ5q+m2gwN6eOMH7tH3P4Kf79ipJ4v5NRaN2HhtL3YzN+2xns4QBa7ZAoKhO5NEFRHZ7Rb61+rRZdZz/1EHysCwKEozkyJgZpXaMbsqs16b+SfCzwUSKTD9esckpnXMqgB64hDuo8paQSMNUVMtiTr6fL9cJziXXJt2KKhJ0l/ODj789zwWtWBKG/IgbPFXT5pR2IFwEiszDPMriuejCG2/1PXz5MM/5SrCA7hnMwZONkxlhATrHCQXR5NS8Lt/Knooo3XQ9TXRRCLFff3ZOYn0LU2T4rcP9VX/iICT/wAmsZ9bLuEqW+qrYljzQgzJKaaCmNrEt6wjcrRORMzH5l3YovB1veTvl04pX4CyU5zeiHLfZ7O6bwcARjhJ/0YJH1ls8eXPYUnSKU4iV6fMZY0rqL1t8a74=",
+        "type": "thought"
+      },
+      {
+        "id": "call_692208",
+        "type": "function_call",
+        "name": "click",
+        "arguments": {
+          "x": 303,
+          "y": 571,
+          "intent": "Click the Continue button."
+        }
+      }
+    ],
+    "object": "interaction",
+    "model": "gemini-3.8-flash",
+    "sdkHttpResponse": {
+      "headers": {
+        "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+        "content-encoding": "gzip",
+        "content-type": "application/json",
+        "date": "Thu, 24 Sep 2026 18:38:21 GMT",
+        "server": "scaffolding on HTTPServer2",
+        "server-timing": "gfet4t7; dur=5076",
+        "transfer-encoding": "chunked",
+        "vary": "Origin, X-Origin, Referer",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "SAMEORIGIN",
+        "x-xss-protection": "0"
+      },
+      "responseInternal": {}
+    }
+  }
+]

@@ -1,0 +1,114 @@
+[
+  {
+    "id": "v1_ChdGMjYxYXNyWUpkT2sxTWtQcEotUi1RcxIXRjI2MWFzcllKZE9rMU1rUHBKLVItUXM",
+    "status": "requires_action",
+    "usage": {
+      "total_tokens": 1483,
+      "total_input_tokens": 1117,
+      "input_tokens_by_modality": [
+        {
+          "modality": "image",
+          "tokens": 1092
+        },
+        {
+          "modality": "text",
+          "tokens": 25
+        }
+      ],
+      "total_cached_tokens": 0,
+      "total_output_tokens": 31,
+      "total_tool_use_tokens": 0,
+      "total_thought_tokens": 335,
+      "raw_prompt_token": 4432,
+      "model_invocation_token_counts": [
+        {
+          "prompt_tokens_details": [
+            {
+              "modality": "text",
+              "tokens": 3340
+            },
+            {
+              "modality": "image",
+              "tokens": 1092
+            }
+          ],
+          "candidates_tokens_details": [
+            {
+              "modality": "text",
+              "tokens": 37
+            }
+          ],
+          "thoughts_tokens_details": [
+            {
+              "modality": "text",
+              "tokens": 335
+            }
+          ]
+        }
+      ],
+      "non_grounding_model_invocation_token_counts": [
+        {
+          "prompt_tokens_details": [
+            {
+              "modality": "text",
+              "tokens": 3340
+            },
+            {
+              "modality": "image",
+              "tokens": 1092
+            }
+          ],
+          "candidates_tokens_details": [
+            {
+              "modality": "text",
+              "tokens": 37
+            }
+          ],
+          "thoughts_tokens_details": [
+            {
+              "modality": "text",
+              "tokens": 335
+            }
+          ]
+        }
+      ]
+    },
+    "created": "2026-09-24T18:38:15Z",
+    "updated": "2026-09-24T18:38:15Z",
+    "service_tier": "standard",
+    "steps": [
+      {
+        "signature": "EoUICoIIAWkUfRP/Mjvv1vpzM/EgJev4sM9xLRipckFkEYli7DelY3bl2IJ9Dtu7eauIP389mT/jikYqDeF1jerYa0t+xvnFcyZnzl4hEh6YXIJOXEk0k05FD/6CUwrwpOwF2nM8LvbN3kboZUXzzSlsEPin4jiqiCNSEh9SiC4GtGzIGCtEzW7hz6zwK1+wNZjyAD6Cq66JKla+T2GVnJi86RPyWwc0gRloTrdnM7q/wUCpzRBl4lZVafCulvfR9U7lhGp1cOE/9S4o2lSlbqtpCeD5GVDvtwWZLkuhM42fAle+kaJ07sdxP6b2mvV1RjkZNLOZRUFS9HVI86f/SflHEDGAjJ56pBz5ngj3v6k966vPIv8TJ843VAm41uH411vPaBFcm88bJwiKLhwQ7pMhlsAJlitBj1WHkTRDVM6quBxc5kNUoGw3XhLvBUzlVU5d/mOITqBAV7xBUp9uuRol8bh2D5KeZOgF5s/vnCWAWgcXk9PUWHELpf8yWsrcqt6MM7W96SpRI6mAT7wiSstcHwbVRnpaL7MDobjtm4EbZdWIA/CoDgU2vS1Wgi7SosSksNmGSDh7S+A7bCR9MXliRr24WKITn5wQSPLmXgQxqCCpwf45zDPW1M2YDkca56FvM8eY8bqWMB7Qev44HecOm7KnkWSj+Df+PC06XyjtR7Qs6VqbDars5axgBr2CdqDyIbJfvYX7iShs0HnN41wLob68i6kg8OCTJvJhfAW9QaO/0tK5UyGdp1fG4LpPPg/imHBE7ThHbYQGOmPNKlDw9sUhNxQTGRG5R6E5i0fxm1tLq2Pr7ALNlKh8tYwhgF412uGyF/J2kbaHlemhUM4FJtA6gleS4jq700fOnZ9u03FrSj/Ks+oCMW6ri/AdUFQJ9Iqe63d4mSXGdhYiWEz498M1JcM47szS+4zXw55YxoCBUARpXjVFV3KhW8MuKoUQND+G0CBvDUDKrnEI2rFYVoeGPB7MsoVAc6RN5e9+hptz81XlTQsUmLmcxMGZUFCTgk/5mMqOwEd92+qnyb8kU1xC1e8QT1MpDE8zl594EhiGk1gVnY+qPP6UwtPRzYuKh6YtRBI2SivGpqwxFzKs1BovitDM63vErcg4pTquOKvRPzvTH8DYePWA0SFw8wg4HeFYl/ch6Rrspswfy29P6ovK9zi2atFCcIty85JAmZ9QsMWuVgxu1y26SJrv+B8vXPaVo12MguovJyCHgTlux4bCqm5AmKVZ+rFlja7NG8FDTxp3j460Yk+t0UpjhxUOuo2s+XvHJuQRmXN+f0jS+DRvAjdvnyoEuJkL9YOsUvGZsRQdYJjK4IjNXL1vuHB6Ap1N+WCS6XcpGEf6lbmuGkCN1Fo9",
+        "type": "thought"
+      },
+      {
+        "id": "call_279144",
+        "type": "function_call",
+        "name": "click",
+        "arguments": {
+          "intent": "Click the Continue button",
+          "x": 641,
+          "y": 616
+        }
+      }
+    ],
+    "object": "interaction",
+    "model": "gemini-3.8-flash",
+    "sdkHttpResponse": {
+      "headers": {
+        "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+        "content-encoding": "gzip",
+        "content-type": "application/json",
+        "date": "Thu, 24 Sep 2026 18:38:16 GMT",
+        "server": "scaffolding on HTTPServer2",
+        "server-timing": "gfet4t7; dur=4161",
+        "transfer-encoding": "chunked",
+        "vary": "Origin, X-Origin, Referer",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "SAMEORIGIN",
+        "x-xss-protection": "0"
+      },
+      "responseInternal": {}
+    }
+  }
+]

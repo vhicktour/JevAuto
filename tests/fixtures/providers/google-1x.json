@@ -1,0 +1,114 @@
+[
+  {
+    "id": "v1_ChdFMjYxYW9MbkM5eUVfdU1QZ2ZuRHdBcxIXRTI2MWFvTG5DOXlFX3VNUGdmbkR3QXM",
+    "status": "requires_action",
+    "usage": {
+      "total_tokens": 3661,
+      "total_input_tokens": 1117,
+      "input_tokens_by_modality": [
+        {
+          "modality": "text",
+          "tokens": 25
+        },
+        {
+          "modality": "image",
+          "tokens": 1092
+        }
+      ],
+      "total_cached_tokens": 0,
+      "total_output_tokens": 31,
+      "total_tool_use_tokens": 0,
+      "total_thought_tokens": 2513,
+      "raw_prompt_token": 4432,
+      "model_invocation_token_counts": [
+        {
+          "prompt_tokens_details": [
+            {
+              "modality": "text",
+              "tokens": 3340
+            },
+            {
+              "modality": "image",
+              "tokens": 1092
+            }
+          ],
+          "candidates_tokens_details": [
+            {
+              "modality": "text",
+              "tokens": 37
+            }
+          ],
+          "thoughts_tokens_details": [
+            {
+              "modality": "text",
+              "tokens": 2513
+            }
+          ]
+        }
+      ],
+      "non_grounding_model_invocation_token_counts": [
+        {
+          "prompt_tokens_details": [
+            {
+              "modality": "text",
+              "tokens": 3340
+            },
+            {
+              "modality": "image",
+              "tokens": 1092
+            }
+          ],
+          "candidates_tokens_details": [
+            {
+              "modality": "text",
+              "tokens": 37
+            }
+          ],
+          "thoughts_tokens_details": [
+            {
+              "modality": "text",
+              "tokens": 2513
+            }
+          ]
+        }
+      ]
+    },
+    "created": "2026-09-24T18:38:11Z",
+    "updated": "2026-09-24T18:38:11Z",
+    "service_tier": "standard",
+    "steps": [
+      {
+        "signature": "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… [9856 chars]",
+        "type": "thought"
+      },
+      {
+        "id": "call_579002",
+        "type": "function_call",
+        "name": "click",
+        "arguments": {
+          "y": 547,
+          "x": 570,
+          "intent": "Click the Continue button"
+        }
+      }
+    ],
+    "object": "interaction",
+    "model": "gemini-3.8-flash",
+    "sdkHttpResponse": {
+      "headers": {
+        "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+        "content-encoding": "gzip",
+        "content-type": "application/json",
+        "date": "Thu, 24 Sep 2026 18:38:11 GMT",
+        "server": "scaffolding on HTTPServer2",
+        "server-timing": "gfet4t7; dur=15447",
+        "transfer-encoding": "chunked",
+        "vary": "Origin, X-Origin, Referer",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "SAMEORIGIN",
+        "x-xss-protection": "0"
+      },
+      "responseInternal": {}
+    }
+  }
+]
