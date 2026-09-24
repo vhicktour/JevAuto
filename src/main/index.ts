@@ -1,4 +1,5 @@
-import { app, ipcMain, screen, utilityProcess, type BrowserWindow } from 'electron'
+import { app, globalShortcut, ipcMain, screen, utilityProcess, type BrowserWindow } from 'electron'
+import { existsSync, readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { z } from 'zod'
@@ -6,7 +7,8 @@ import { Supervisor } from './supervisor'
 import { spikeFromArgv, runSpike, type SpikeName } from './spikes'
 import { UiCoordinator } from './ui'
 import { PROTOCOL_VERSION, type AgentInit } from '../shared/protocol'
-import { UiAct, UiDone, UiStatus, type UiEvent } from '../shared/ui-events'
+import { UiAct, UiApproval, UiDone, UiQuestion, UiStatus, type UiEvent } from '../shared/ui-events'
+import { keysFromEnvFile } from './keys'
 import { readDisplays } from '../shared/native'
 
 const root = dirname(fileURLToPath(import.meta.url))
@@ -43,6 +45,10 @@ const Command = z.discriminatedUnion('type', [
   z.object({ type: z.literal('stop') }),
   z.object({ type: z.literal('run'), spike: z.enum(['demo']) }),
   z.object({ type: z.literal('island-hit'), rect: z.object({ x: z.number(), y: z.number(), width: z.number(), height: z.number() }).nullable() }),
+  z.object({ type: z.literal('task'), text: z.string().trim().min(1).max(2000) }),
+  z.object({ type: z.literal('answer'), id: z.string().min(1), answer: z.enum(['once', 'run', 'deny']) }),
+  z.object({ type: z.literal('reply'), id: z.string().min(1), text: z.string().max(4000).nullable() }),
+  z.object({ type: z.literal('command-bar'), open: z.boolean() }),
 ])
 
 ipcMain.handle('jevauto:command', (event, raw: unknown) => {
@@ -53,24 +59,50 @@ ipcMain.handle('jevauto:command', (event, raw: unknown) => {
   if (command.type === 'status') return { ok: true, value: status }
   if (command.type === 'stop') stopWork()
   else if (command.type === 'run') void startRun(command.spike)
+  else if (command.type === 'task') void startTask(command.text)
+  else if (command.type === 'answer') supervisor?.reply(command.id, { answer: command.answer })
+  else if (command.type === 'reply') supervisor?.reply(command.id, { text: command.text })
+  else if (command.type === 'command-bar') ui?.showCommandBar(command.open)
   else ui?.setIslandHit(command.rect)
   return { ok: true, value: null }
 })
 
+const Closed = z.object({ id: z.string() })
+
 /** Agent `ui.*` events go to every surface once they match the schema; anything else is logged. */
 function relay(name: string, data: unknown) {
-  const parsed =
-    name === 'ui.act' ? UiAct.safeParse(data)
-    : name === 'ui.done' ? UiDone.safeParse(data)
-    : name === 'ui.status' ? UiStatus.safeParse(data)
+  const closed = Closed.safeParse(data)
+  const event: UiEvent | undefined =
+    name === 'ui.act' ? parsedEvent(UiAct, data, (act) => ({ type: 'act', act }))
+    : name === 'ui.done' ? parsedEvent(UiDone, data, (done) => ({ type: 'done', done }))
+    : name === 'ui.status' ? parsedEvent(UiStatus, data, (status) => ({ type: 'status', status }))
+    : name === 'ui.approval' ? parsedEvent(UiApproval, data, (approval) => ({ type: 'approval', approval }))
+    : name === 'ui.question' ? parsedEvent(UiQuestion, data, (question) => ({ type: 'question', question }))
+    : name === 'ui.approval-closed' && closed.success ? { type: 'approval-closed', id: closed.data.id }
+    : name === 'ui.question-closed' && closed.success ? { type: 'question-closed', id: closed.data.id }
     : undefined
-  if (parsed?.success) {
-    if (name === 'ui.act') broadcast({ type: 'act', act: parsed.data as UiAct })
-    else if (name === 'ui.done') broadcast({ type: 'done', done: parsed.data as UiDone })
-    else broadcast({ type: 'status', status: parsed.data as UiStatus })
-    return
-  }
-  emit(`agent event ${name}: ${JSON.stringify(data)}`)
+  if (event) broadcast(event)
+  else emit(`agent event ${name}: ${JSON.stringify(data)}`)
+}
+
+function parsedEvent<T>(schema: z.ZodType<T>, data: unknown, wrap: (value: T) => UiEvent): UiEvent | undefined {
+  const parsed = schema.safeParse(data)
+  return parsed.success ? wrap(parsed.data) : undefined
+}
+
+/**
+ * Provider keys for the agent. `pnpm dev` reads this checkout's .env.local; the signed dev bundle carries the path in its
+ * package.json (scripts/app.mjs). Keys go to the agent in its init message and nowhere else.
+ */
+function loadKeys(): AgentInit['keys'] {
+  let file: string | undefined = join(app.getAppPath(), '.env.local')
+  if (app.isPackaged)
+    try {
+      file = (JSON.parse(readFileSync(join(app.getAppPath(), 'package.json'), 'utf8')) as { jevautoEnvFile?: string }).jevautoEnvFile
+    } catch {
+      file = undefined
+    }
+  return file && existsSync(file) ? keysFromEnvFile(readFileSync(file, 'utf8')) : {}
 }
 
 export function agentPaths() {
@@ -92,7 +124,10 @@ async function startAgent() {
     version: PROTOCOL_VERSION,
     ...agentPaths(),
     evidenceDir: join(app.getPath('userData'), 'evidence'),
+    runsDir: join(app.getPath('userData'), 'runs'),
+    keys: loadKeys(),
   }
+  if (!init.keys?.openai) emit('No OpenAI key found. Add OPENAI_API_KEY to .env.local and restart JevAuto.')
   lastInit = init
   supervisor = new Supervisor(
     () => {
@@ -157,6 +192,32 @@ async function startRun(name: SpikeName) {
   }
 }
 
+type RunOutcome = { status: string; summary: string; actions: number; turns: number; usd: number; ms: number; log: string }
+
+/** A task you typed: the agent's loop runs it; its status events drive the island and the activity window. */
+async function startTask(task: string) {
+  ui?.showCommandBar(false)
+  if (run || !supervisor) {
+    emit(run ? 'A task is already running. Stop it first.' : 'The agent is not ready yet.')
+    return
+  }
+  const controller = new AbortController()
+  run = controller
+  broadcast({ type: 'status', status: { state: 'working', title: task } })
+  try {
+    const r = await supervisor.request<RunOutcome>('agent.run', { task }, { signal: controller.signal })
+    emit(`${r.status}: ${r.summary} (${r.actions} actions, ${r.turns} turns, ${(r.ms / 1000).toFixed(1)} s, $${r.usd.toFixed(3)}) · log ${r.log}`)
+  } catch (error) {
+    if (!controller.signal.aborted) {
+      const message = error instanceof Error ? error.message : String(error)
+      emit(`task failed: ${message}`)
+      broadcast({ type: 'status', status: { state: 'error', title: 'Could not finish', detail: message.slice(0, 160) } })
+    }
+  } finally {
+    if (run === controller) run = undefined
+  }
+}
+
 /**
  * Stop's backstop (spec §8): 250 ms after a cancel, kill the agent. Cancelling a Cua call does not stop the keystrokes
  * it already queued (Spike A), but the in-process driver dies with the agent; the supervisor restarts it.
@@ -189,6 +250,9 @@ async function watchDisplays() {
 
 app.whenReady().then(async () => {
   ui = new UiCoordinator(join(root, '../preload/index.cjs'), load)
+  // ⌃⌥Space, not ⌥Space: ChatGPT owns that one (spec §9).
+  if (!globalShortcut.register('Control+Alt+Space', () => ui?.toggleCommandBar()))
+    emit('⌃⌥Space is taken by another app; type tasks in the JevAuto window instead.')
   try {
     await startAgent()
     await watchDisplays()
@@ -199,6 +263,7 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => app.quit())
+app.on('will-quit', () => globalShortcut.unregisterAll())
 app.on('before-quit', (event) => {
   if (shutdownComplete || !supervisor) return
   event.preventDefault()

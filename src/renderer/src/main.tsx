@@ -4,6 +4,7 @@ import '@fontsource/sora/500.css'
 import '@fontsource/sora/600.css'
 import '../styles/app.css'
 import { Activity } from './Activity'
+import { CommandBar } from './Command'
 import { Island } from './Island'
 import { Overlay } from './Overlay'
 import { ProbeIsland, ProbeOverlay } from './Probe'
@@ -13,6 +14,7 @@ document.body.classList.add(`surface-${surface}`) // prefixed so it can never co
 const views: Record<string, () => ReactElement> = {
   overlay: () => <Overlay />,
   island: () => <Island />,
+  command: () => <CommandBar />,
   'probe-overlay': () => <ProbeOverlay />,
   'probe-island': () => <ProbeIsland />,
 }

@@ -1,10 +1,10 @@
-import type { UiEvent } from '../../shared/ui-events'
+import type { UiApproval, UiEvent } from '../../shared/ui-events'
 import { narrate } from '../../shared/narrate'
 
 export { narrate }
 
 export type IslandMode = 'rest' | 'working' | 'attention' | 'error' | 'done' | 'stopped'
-export type IslandView = { mode: IslandMode; title: string; detail?: string; step?: { n: number; of: number } }
+export type IslandView = { mode: IslandMode; title: string; detail?: string; step?: { n: number; of: number }; approval?: UiApproval }
 
 export const REST: IslandView = { mode: 'rest', title: '' }
 
@@ -16,6 +16,11 @@ export function reduceIsland(view: IslandView, event: UiEvent): IslandView {
     const mode = MODES[state]
     if (mode === 'rest') return REST
     return { mode, title, ...(detail ? { detail } : mode === 'working' && view.mode === 'working' && view.detail ? { detail: view.detail } : {}), ...(step ? { step } : {}) }
+  }
+  if (event.type === 'approval') return { ...view, mode: 'attention', title: event.approval.title, detail: event.approval.reason, approval: event.approval }
+  if (event.type === 'approval-closed' && view.approval?.id === event.id) {
+    const { approval: _closed, ...rest } = view
+    return rest
   }
   if (event.type === 'act' && view.mode === 'working') return { ...view, detail: narrate(event.act) }
   return view

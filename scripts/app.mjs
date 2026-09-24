@@ -18,6 +18,8 @@ if (!args.includes('--no-build')) {
   run('pnpm', [
     'exec', 'electron-builder', '--mac', 'dir', '--arm64',
     '-c.appId=personal.jevauto.desktop.dev', '-c.productName=JevAuto Dev', '-c.extraMetadata.productName=JevAuto Dev',
+    // The dev bundle reads provider keys from this checkout's .env.local at launch; release builds never carry the path.
+    `-c.extraMetadata.jevautoEnvFile=${resolve('.env.local')}`,
     '-c.mac.type=development', `-c.mac.identity=${identity}`,
     // Dev signatures need no secure timestamp; skipping it removes a network round trip that can fail (release keeps it).
     '-c.mac.timestamp=none',

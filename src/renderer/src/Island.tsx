@@ -10,11 +10,12 @@ const NOTCH = { width: Number(q.get('nw') ?? 0), height: Number(q.get('nh') ?? 3
 const HAS_NOTCH = NOTCH.width > 0
 const EAR = 104
 const LINE = 40
+const ACTIONS = 44
 
 function sizeOf(view: IslandView) {
   if (view.mode === 'rest') return HAS_NOTCH ? { width: NOTCH.width, height: NOTCH.height } : { width: 140, height: 32 }
-  const width = HAS_NOTCH ? Math.max(NOTCH.width + EAR * 2, 460) : 420
-  return { width, height: (HAS_NOTCH ? NOTCH.height : 36) + LINE }
+  const width = HAS_NOTCH ? Math.max(NOTCH.width + EAR * 2, view.approval ? 520 : 460) : view.approval ? 480 : 420
+  return { width, height: (HAS_NOTCH ? NOTCH.height : 36) + LINE + (view.approval ? ACTIONS : 0) }
 }
 
 const LINGER: Partial<Record<IslandView['mode'], number>> = { done: 2600, stopped: 1600 }
@@ -37,7 +38,7 @@ export function Island() {
     const r = pill.current?.getBoundingClientRect()
     void command({ type: 'island-hit', rect: view.mode === 'rest' || !r ? null : { x: r.x, y: r.y, width: r.width, height: r.height } })
   }
-  useLayoutEffect(report, [view.mode])
+  useLayoutEffect(report, [view.mode, view.approval?.id])
 
   const size = sizeOf(view)
   const busy = view.mode === 'working' || view.mode === 'attention'
@@ -82,8 +83,11 @@ export function Island() {
                 </div>
               </div>
               <div className="island-line" style={{ height: LINE }}>
-                <span className="island-line-text">{view.mode === 'working' && view.detail ? view.detail : view.detail ? `${view.title} · ${view.detail}` : view.title}</span>
+                <span className="island-line-text" title={view.approval?.reason}>
+                  {view.approval ? view.approval.title : view.mode === 'working' && view.detail ? view.detail : view.detail ? `${view.title} · ${view.detail}` : view.title}
+                </span>
               </div>
+              {view.approval && <IslandActions id={view.approval.id} offersRun={view.approval.offersRun} />}
               {view.step && busy && (
                 <div className="island-progress">
                   <span style={{ transform: `scaleX(${view.step.n / view.step.of})` }} />
@@ -93,6 +97,25 @@ export function Island() {
           )}
         </AnimatePresence>
       </motion.div>
+    </div>
+  )
+}
+
+function IslandActions({ id, offersRun }: { id: string; offersRun: boolean }) {
+  const answer = (value: 'once' | 'run' | 'deny') => void command({ type: 'answer', id, answer: value })
+  return (
+    <div className="island-actions" style={{ height: ACTIONS }}>
+      <button type="button" className="island-button" onClick={() => answer('deny')}>
+        Deny
+      </button>
+      {offersRun && (
+        <button type="button" className="island-button" onClick={() => answer('run')}>
+          For this task
+        </button>
+      )}
+      <button type="button" className="island-button island-button--allow" onClick={() => answer('once')}>
+        Allow once
+      </button>
     </div>
   )
 }

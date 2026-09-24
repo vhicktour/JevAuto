@@ -349,3 +349,13 @@ test('a click on the letterbox padding is refused before anything runs', async (
   assert.equal(world.acted().length, 0)
   assert.match(script.nexts[0].notes.join(' '), /outside the window/)
 })
+
+test('after you answer an approval, every surface goes back to working', async () => {
+  const world = new World()
+  const statuses: string[] = []
+  const script = new Script([{ actions: [SEND] }, { actions: [done('f1')] }])
+  await runTask(deps(world, script, { emit: (name, data) => name === 'ui.status' && void statuses.push((data as { state: string }).state) }).d)
+  const asked = statuses.indexOf('needs-you')
+  assert.ok(asked >= 0)
+  assert.equal(statuses[asked + 1], 'working')
+})

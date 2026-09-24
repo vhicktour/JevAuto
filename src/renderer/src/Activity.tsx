@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { UiAct, UiDone, UiStatus } from '../../shared/ui-events'
+import type { UiAct, UiApproval, UiDone, UiQuestion, UiStatus } from '../../shared/ui-events'
 import { CursorGlyph } from './cursor/CursorGlyph'
 import { narrate } from './island-view'
 import { command, onUiEvent } from './events'
@@ -17,6 +17,9 @@ export function Activity() {
   const [rows, setRows] = useState<Row[]>([])
   const [log, setLog] = useState<string[]>([])
   const [showLog, setShowLog] = useState(false)
+  const [task, setTask] = useState('')
+  const [approval, setApproval] = useState<UiApproval | null>(null)
+  const [question, setQuestion] = useState<UiQuestion | null>(null)
   const list = useRef<HTMLOListElement>(null)
 
   useEffect(() => {
@@ -24,9 +27,20 @@ export function Activity() {
     return onUiEvent((e) => {
       if (e.type === 'status-line') setLog((l) => [...l.slice(-199), e.line])
       else if (e.type === 'permissions') setAccess({ accessibility: e.accessibility, screenRecording: e.screenRecording })
-      else if (e.type === 'status') setStatus(e.status)
+      else if (e.type === 'status') {
+        setStatus(e.status)
+        // A run that ended (or an agent that died) leaves nothing to answer.
+        if (!['working', 'needs-you'].includes(e.status.state)) {
+          setApproval(null)
+          setQuestion(null)
+        }
+      }
       else if (e.type === 'act') setRows((r) => [...r.slice(-79), { act: e.act }])
       else if (e.type === 'done') setRows((r) => r.map((row) => (row.act.id === e.done.id ? { ...row, done: e.done } : row)))
+      else if (e.type === 'approval') setApproval(e.approval)
+      else if (e.type === 'approval-closed') setApproval((a) => (a?.id === e.id ? null : a))
+      else if (e.type === 'question') setQuestion(e.question)
+      else if (e.type === 'question-closed') setQuestion((q) => (q?.id === e.id ? null : q))
     })
   }, [])
   useEffect(() => {
@@ -34,6 +48,13 @@ export function Activity() {
   }, [rows.length])
 
   const busy = status.state === 'working' || status.state === 'needs-you'
+  const run = () => {
+    const text = task.trim()
+    if (!text || busy) return
+    setRows([])
+    void command({ type: 'task', text })
+    setTask('')
+  }
   return (
     <main className="activity">
       <header className="activity-header">
@@ -44,6 +65,45 @@ export function Activity() {
           {STATE_LABEL[status.state]}
         </span>
       </header>
+
+      <form
+        className="composer"
+        onSubmit={(e) => {
+          e.preventDefault()
+          run()
+        }}
+      >
+        <textarea
+          value={task}
+          onChange={(e) => setTask(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              run()
+            }
+          }}
+          placeholder="What should JevAuto do? For example: in Notes, start a checklist with milk, eggs and bread."
+          aria-label="Task"
+          rows={2}
+          maxLength={2000}
+          disabled={busy}
+        />
+        <div className="composer-row">
+          <span className="composer-hint">Return runs it · ⌃⌥Space opens this from anywhere</span>
+          {busy ? (
+            <button type="button" className="button button--stop" onClick={() => void command({ type: 'stop' })}>
+              Stop
+            </button>
+          ) : (
+            <button type="submit" className="button button--primary" disabled={!task.trim()}>
+              Run
+            </button>
+          )}
+        </div>
+      </form>
+
+      {approval && <ApprovalCard approval={approval} />}
+      {question && <QuestionCard key={question.id} question={question} />}
 
       <section className="card">
         <h2>Mac access</h2>
@@ -63,7 +123,7 @@ export function Activity() {
           )}
         </div>
         {rows.length === 0 ? (
-          <p className="empty">Nothing yet. Run the demo to watch the agent work.</p>
+          <p className="empty">Nothing yet. Type a task above, or run the demo.</p>
         ) : (
           <ol ref={list} className="timeline">
             {rows.map(({ act, done }) => (
@@ -82,9 +142,6 @@ export function Activity() {
         <button type="button" className="button button--primary" disabled={busy} onClick={() => void command({ type: 'run', spike: 'demo' })}>
           Run demo
         </button>
-        <button type="button" className="button button--stop" disabled={!busy} onClick={() => void command({ type: 'stop' })}>
-          Stop
-        </button>
         <button type="button" className="button button--quiet" onClick={() => setShowLog((s) => !s)}>
           {showLog ? 'Hide log' : 'Log'}
         </button>
@@ -95,6 +152,56 @@ export function Activity() {
         </pre>
       )}
     </main>
+  )
+}
+
+function ApprovalCard({ approval }: { approval: UiApproval }) {
+  const answer = (value: 'once' | 'run' | 'deny') => void command({ type: 'answer', id: approval.id, answer: value })
+  return (
+    <section className="card card--attention" role="alertdialog" aria-label={approval.title}>
+      <h2>Needs your OK</h2>
+      <p className="attention-title">{approval.title}</p>
+      <p className="attention-reason">{approval.reason}</p>
+      <div className="attention-actions">
+        <button type="button" className="button" onClick={() => answer('deny')}>
+          Deny
+        </button>
+        {approval.offersRun && (
+          <button type="button" className="button" onClick={() => answer('run')}>
+            Allow for this task
+          </button>
+        )}
+        <button type="button" className="button button--amber" onClick={() => answer('once')}>
+          Allow once
+        </button>
+      </div>
+    </section>
+  )
+}
+
+function QuestionCard({ question }: { question: UiQuestion }) {
+  const [text, setText] = useState('')
+  const send = (value: string | null) => void command({ type: 'reply', id: question.id, text: value })
+  return (
+    <form
+      className="card card--attention"
+      onSubmit={(e) => {
+        e.preventDefault()
+        send(text.trim() || null)
+      }}
+    >
+      <h2>JevAuto asks</h2>
+      <p className="attention-title">{question.question}</p>
+      <input className="attention-input" value={text} onChange={(e) => setText(e.target.value)} aria-label="Your answer" autoFocus maxLength={4000} />
+      <div className="attention-actions">
+        <button type="button" className="button" onClick={() => send(null)}>
+          Skip
+        </button>
+        <button type="submit" className="button button--amber">
+          Send
+        </button>
+      </div>
+    </form>
   )
 }
 

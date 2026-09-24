@@ -24,7 +24,7 @@ class FakeChild implements AgentChild {
 
 const init: AgentInit = {
   type: 'init', version: PROTOCOL_VERSION, cuaSdkPath: '/x/cua-sdk.mjs',
-  cuaLibraryPath: '/x/libcua_driver_sdk.dylib', nativeHelperPath: '/x/JevNative', evidenceDir: '/x/evidence',
+  cuaLibraryPath: '/x/libcua_driver_sdk.dylib', nativeHelperPath: '/x/JevNative', evidenceDir: '/x/evidence', runsDir: '/x/runs',
 }
 const options = { maxRestarts: 2, windowMs: 60_000, backoffMs: 1, readyTimeoutMs: 1_000 }
 
@@ -112,4 +112,16 @@ test('kill stops the agent at once, rejects its requests and restarts it outside
   await new Promise((r) => setTimeout(r, 20))
   assert.equal(children.length, 5) // the first child plus four restarts, although maxRestarts is 1
   assert.equal(gaveUp, '')
+})
+
+test('reply sends your answer to the waiting agent', async () => {
+  const child = new FakeChild()
+  const supervisor = new Supervisor(() => child, init, options)
+  await supervisor.start()
+  supervisor.reply('q1', { answer: 'once' })
+  supervisor.reply('q2', { text: 'Tuesday' })
+  assert.deepEqual(child.sent.slice(-2), [
+    { type: 'reply', id: 'q1', answer: 'once' },
+    { type: 'reply', id: 'q2', text: 'Tuesday' },
+  ])
 })

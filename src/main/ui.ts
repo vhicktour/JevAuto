@@ -6,7 +6,8 @@ import type { UiEvent } from '../shared/ui-events'
 export type Load = (window: BrowserWindow, query: Record<string, string>) => void
 type Rect = { x: number; y: number; width: number; height: number }
 
-const ISLAND_PANEL = { width: 560, height: 110 }
+/** Tall enough for the island at its largest: notch row, narration line and the approval buttons. */
+const ISLAND_PANEL = { width: 560, height: 140 }
 
 /**
  * Owns every JevAuto surface (spec §9): the activity window, one click-through overlay per display for the agent
@@ -16,6 +17,7 @@ export class UiCoordinator {
   readonly activity: BrowserWindow
   private overlays: BrowserWindow[] = []
   private island?: BrowserWindow
+  private readonly commandBar: BrowserWindow
   private islandHit: Rect | null = null
   private islandIgnoring = true
   private readonly timer: NodeJS.Timeout
@@ -25,6 +27,7 @@ export class UiCoordinator {
     private readonly load: Load,
   ) {
     this.activity = this.makeActivity()
+    this.commandBar = this.makeCommandBar()
     // Jarvis's hit test: the island panel is click-through except over the visible pill.
     this.timer = setInterval(() => this.hitTest(), 60)
     this.timer.unref()
@@ -57,21 +60,36 @@ export class UiCoordinator {
     this.islandIgnoring = true
   }
 
+  toggleCommandBar() {
+    this.showCommandBar(!this.commandBar.isVisible())
+  }
+
+  /** Opens the ⌃⌥Space bar on the display under the pointer, or hides it. */
+  showCommandBar(open: boolean) {
+    if (this.commandBar.isDestroyed()) return
+    if (!open) return this.commandBar.hide()
+    const { x, y, width, height } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea
+    const [w] = this.commandBar.getSize()
+    this.commandBar.setPosition(Math.round(x + (width - w) / 2), Math.round(y + height * 0.22))
+    this.commandBar.show()
+    this.commandBar.focus()
+  }
+
   destroy() {
     clearInterval(this.timer)
     for (const w of this.all()) if (!w.isDestroyed()) w.destroy()
   }
 
   private all() {
-    return [this.activity, ...this.overlays, ...(this.island ? [this.island] : [])]
+    return [this.activity, this.commandBar, ...this.overlays, ...(this.island ? [this.island] : [])]
   }
 
   private makeActivity() {
     const window = new BrowserWindow({
-      width: 440,
-      height: 640,
-      minWidth: 380,
-      minHeight: 480,
+      width: 460,
+      height: 720,
+      minWidth: 400,
+      minHeight: 560,
       title: 'JevAuto',
       titleBarStyle: 'hiddenInset',
       transparent: true,
@@ -81,16 +99,48 @@ export class UiCoordinator {
     })
     this.guard(window)
     window.once('ready-to-show', () => (process.argv.includes('--background') ? window.showInactive() : window.show()))
-    window.webContents.once('did-finish-load', () => {
-      try {
-        if (glass.addView(window.getNativeWindowHandle(), { cornerRadius: 16, tintColor: '#08121A44' }) >= 0 && glass.isGlassSupported())
-          void window.webContents.executeJavaScript("document.body.classList.add('has-glass')")
-      } catch (error) {
-        console.error('Glass material:', error instanceof Error ? error.message : 'unavailable')
-      }
-    })
+    window.webContents.once('did-finish-load', () => this.addGlass(window, 16, '#08121A44'))
     this.load(window, { surface: 'activity' })
     return window
+  }
+
+  /**
+   * The command bar is a non-activating panel that can still take typing: the app you were using stays frontmost,
+   * so it is the window the task starts in. It hides as soon as it loses focus.
+   */
+  private makeCommandBar() {
+    const window = new BrowserWindow({
+      width: 640,
+      height: 64,
+      type: 'panel',
+      frame: false,
+      transparent: true,
+      backgroundColor: '#00000000',
+      resizable: false,
+      movable: false,
+      minimizable: false,
+      maximizable: false,
+      fullscreenable: false,
+      skipTaskbar: true,
+      show: false,
+      webPreferences: this.webPreferences('command'),
+    })
+    window.setAlwaysOnTop(true, 'floating')
+    window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true })
+    window.on('blur', () => window.hide())
+    this.guard(window)
+    window.webContents.once('did-finish-load', () => this.addGlass(window, 32, '#08121A55'))
+    this.load(window, { surface: 'command' })
+    return window
+  }
+
+  private addGlass(window: BrowserWindow, cornerRadius: number, tintColor: string) {
+    try {
+      if (glass.addView(window.getNativeWindowHandle(), { cornerRadius, tintColor }) >= 0 && glass.isGlassSupported())
+        void window.webContents.executeJavaScript("document.body.classList.add('has-glass')")
+    } catch (error) {
+      console.error('Glass material:', error instanceof Error ? error.message : 'unavailable')
+    }
   }
 
   /** A transparent, non-activating panel on every Space, including full-screen ones (Spike B). */

@@ -33,3 +33,14 @@ test('needs-you, errors and Stop each get their own mode', () => {
 test('an action while resting does not wake the island by itself', () => {
   assert.equal(reduceIsland(REST, { type: 'act', act: act({ label: '7' }) }).mode, 'rest')
 })
+
+test('an approval shows on the island until it is answered or expires', () => {
+  const approval = { id: 'p1', kind: 'action' as const, title: 'Click “Send” in Mail', reason: 'It sends the message.', offersRun: false }
+  let view = reduceIsland(REST, { type: 'status', status: { state: 'working', title: 'Write the email' } })
+  view = reduceIsland(view, { type: 'approval', approval })
+  assert.equal(view.mode, 'attention')
+  assert.deepEqual(view.approval, approval)
+  assert.equal(reduceIsland(view, { type: 'approval-closed', id: 'other' }).approval, approval)
+  view = reduceIsland(view, { type: 'approval-closed', id: 'p1' })
+  assert.equal(view.approval, undefined)
+})

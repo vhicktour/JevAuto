@@ -111,6 +111,7 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
     } finally {
       meter.resume()
       signal.throwIfAborted()
+      announce('working', d.task)
     }
   }
 
@@ -193,6 +194,7 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
         const answer = await d.ask(String(input.question))
         meter.resume()
         signal.throwIfAborted()
+        announce('working', d.task)
         d.log.write('ask', { question: input.question, answered: answer !== null })
         return { output: answer === null ? { answer: null, note: 'The user did not answer.' } : { answer } }
       }

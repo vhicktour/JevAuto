@@ -1,4 +1,4 @@
-import { AgentToHost, type AgentInit, type AgentMethod } from '../shared/protocol'
+import { AgentToHost, type AgentInit, type AgentMethod, type Reply } from '../shared/protocol'
 
 export interface AgentChild {
   postMessage(message: unknown): void
@@ -87,6 +87,11 @@ export class Supervisor {
       this.pending.set(id, entry)
       child.postMessage({ type: 'request', id, method, params })
     })
+  }
+
+  /** Your answer to an approval or question the agent is waiting on. */
+  reply(id: string, reply: Reply): void {
+    this.child?.postMessage({ type: 'reply', id, ...reply })
   }
 
   /** Stop's backstop (spec §8): the in-process driver dies with the agent. A deliberate kill restarts at once and never counts as a crash. */

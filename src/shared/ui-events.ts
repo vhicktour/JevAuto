@@ -29,6 +29,20 @@ export const UiStatus = z.object({
 })
 export type UiStatus = z.infer<typeof UiStatus>
 
+/** A step waiting for your OK (spec §8). `offersRun` adds "for this run" (foreground delivery only). */
+export const UiApproval = z.object({
+  id: z.string(),
+  kind: z.enum(['action', 'foreground', 'budget']),
+  title: z.string(),
+  reason: z.string(),
+  app: z.string().optional(),
+  offersRun: z.boolean(),
+})
+export type UiApproval = z.infer<typeof UiApproval>
+
+export const UiQuestion = z.object({ id: z.string(), question: z.string() })
+export type UiQuestion = z.infer<typeof UiQuestion>
+
 /** Every event a surface can receive, sent on the one `jevauto:event` channel. */
 export const UiEvent = z.discriminatedUnion('type', [
   z.object({ type: z.literal('status-line'), line: z.string() }),
@@ -36,5 +50,9 @@ export const UiEvent = z.discriminatedUnion('type', [
   z.object({ type: z.literal('done'), done: UiDone }),
   z.object({ type: z.literal('status'), status: UiStatus }),
   z.object({ type: z.literal('permissions'), accessibility: z.boolean(), screenRecording: z.boolean() }),
+  z.object({ type: z.literal('approval'), approval: UiApproval }),
+  z.object({ type: z.literal('approval-closed'), id: z.string() }),
+  z.object({ type: z.literal('question'), question: UiQuestion }),
+  z.object({ type: z.literal('question-closed'), id: z.string() }),
 ])
 export type UiEvent = z.infer<typeof UiEvent>

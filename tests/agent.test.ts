@@ -9,7 +9,7 @@ function port() {
   const p: ParentPortLike = { postMessage: (m) => { out.push(m) }, on: (_e, l) => { listener = l } }
   return { p, out, send: (data: unknown) => listener({ data }) }
 }
-const init = { type: 'init', version: PROTOCOL_VERSION, cuaSdkPath: 'a', cuaLibraryPath: 'b', nativeHelperPath: 'c', evidenceDir: 'd' }
+const init = { type: 'init', version: PROTOCOL_VERSION, cuaSdkPath: 'a', cuaLibraryPath: 'b', nativeHelperPath: 'c', evidenceDir: 'd', runsDir: 'e' }
 const tick = () => new Promise((r) => setTimeout(r, 5))
 
 test('init answers ready; requests before init fail', async () => {
@@ -54,4 +54,34 @@ test('shutdown runs the hook, then reports shutdown-complete', async () => {
   await tick()
   assert.equal(closed, true)
   assert.deepEqual(out.at(-1), { type: 'shutdown-complete' })
+})
+
+test('a reply from the host reaches the handler waiting for it; other ids are ignored', async () => {
+  const { p, out, send } = port()
+  createAgent(p, { ping: async (_params, ctx) => ctx.waitReply('q1', 1_000) })
+  send(init)
+  send({ type: 'request', id: '5', method: 'ping', params: {} })
+  send({ type: 'reply', id: 'zz', answer: 'once' })
+  send({ type: 'reply', id: 'q1', answer: 'run' })
+  await tick()
+  assert.ok(out.some((m) => m.type === 'result' && m.id === '5' && m.value.answer === 'run'))
+})
+
+test('a reply nobody sends expires as undefined', async () => {
+  const { p, out, send } = port()
+  createAgent(p, { ping: async (_params, ctx) => ({ reply: (await ctx.waitReply('q2', 10)) ?? 'none' }) })
+  send(init)
+  send({ type: 'request', id: '6', method: 'ping', params: {} })
+  await new Promise((r) => setTimeout(r, 40))
+  assert.ok(out.some((m) => m.type === 'result' && m.id === '6' && m.value.reply === 'none'))
+})
+
+test('cancel ends a wait for a reply at once', async () => {
+  const { p, out, send } = port()
+  createAgent(p, { ping: async (_params, ctx) => ({ reply: (await ctx.waitReply('q3', 60_000)) ?? 'none' }) })
+  send(init)
+  send({ type: 'request', id: '7', method: 'ping', params: {} })
+  send({ type: 'cancel', id: '7' })
+  await tick()
+  assert.ok(out.some((m) => m.type === 'result' && m.id === '7' && m.value.reply === 'none'))
 })

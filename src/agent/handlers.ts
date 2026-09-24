@@ -1,6 +1,14 @@
+import { randomUUID } from 'node:crypto'
+import OpenAI from 'openai'
 import { z } from 'zod'
 import type { Handler, HandlerContext } from './agent'
 import type { AgentMethod } from '../shared/protocol'
+import { PHASE0_MODELS } from '../shared/constants'
+import { readFocus } from '../shared/native'
+import { INSTRUCTIONS } from './loop/instructions'
+import { runTask, type Answer } from './loop/run'
+import { RunLog } from './loop/runlog'
+import { OpenAIAdapter, type OpenAIClient } from './providers/openai/adapter'
 import { loadStagedCua, MacDriver } from './mac/cua'
 import { runSpikeA, SpikeAParams, startLongType } from './spikes/spike-a'
 import { spikeBCapture, SpikeBParams } from './spikes/spike-b'
@@ -21,9 +29,51 @@ async function visibleMac(ctx: HandlerContext): Promise<VisibleMac> {
 }
 
 const CuaCall = z.object({ name: z.string().min(1), args: z.record(z.string(), z.unknown()).default({}) })
+const AgentRun = z.object({ task: z.string().trim().min(1).max(2000) })
+/** Unanswered approvals expire as a no (spec §8); a question waits longer. */
+const APPROVAL_MS = 60_000
+const QUESTION_MS = 5 * 60_000
+
+/** Runs one task through the loop, asking you (through main, the island and the activity window) when it must. */
+async function agentRun(params: unknown, ctx: HandlerContext) {
+  const { task } = AgentRun.parse(params)
+  const apiKey = ctx.init.keys?.openai
+  if (!apiKey) throw new Error('No OpenAI key: add OPENAI_API_KEY to .env.local, then restart JevAuto.')
+  const log = RunLog.open(ctx.init.runsDir, `${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}`)
+  try {
+    const result = await runTask({
+      task,
+      // The SDK's request types lag the computer tool (Spike C), so the adapter takes the narrow client shape it uses.
+      adapter: new OpenAIAdapter(new OpenAI({ apiKey }) as unknown as OpenAIClient, PHASE0_MODELS.openai, INSTRUCTIONS),
+      mac: await visibleMac(ctx),
+      focus: (pid) => readFocus(ctx.init.nativeHelperPath, pid).catch(() => 'unknown' as const),
+      approve: async (approval): Promise<Answer> => {
+        const id = randomUUID()
+        ctx.emit('ui.approval', { id, ...approval, offersRun: approval.kind === 'foreground' })
+        const reply = await ctx.waitReply(id, APPROVAL_MS)
+        ctx.emit('ui.approval-closed', { id })
+        return reply?.answer ?? 'deny'
+      },
+      ask: async (question) => {
+        const id = randomUUID()
+        ctx.emit('ui.question', { id, question })
+        const reply = await ctx.waitReply(id, QUESTION_MS)
+        ctx.emit('ui.question-closed', { id })
+        return reply?.text?.trim() || null
+      },
+      log,
+      signal: ctx.signal,
+      emit: ctx.emit,
+    })
+    return { ...result, log: log.path }
+  } finally {
+    log.close()
+  }
+}
 
 export const handlers: Partial<Record<AgentMethod, Handler>> = {
   ping: async () => ({ pong: true, pid: process.pid }),
+  'agent.run': agentRun,
   'spike.demo': async (_params, ctx) => runDemo(await visibleMac(ctx), ctx.emit, ctx.init, ctx.signal),
   'spike.stop.type': async (_params, ctx) => startLongType(await visibleMac(ctx)),
   'spike.b.capture': async (params, ctx) => spikeBCapture(await visibleMac(ctx), SpikeBParams.parse(params)),
