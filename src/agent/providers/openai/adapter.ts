@@ -1,0 +1,72 @@
+import { CANVAS } from '../../frame/frame'
+import type { Adapter, CallResult, Turn } from '../../loop/adapter'
+import { TOOL_DEFS } from '../../loop/tools'
+import { parseOpenAI } from './parse'
+
+type Body = Record<string, unknown>
+type Response = { id: string; output: unknown[]; usage?: { input_tokens?: number; output_tokens?: number; input_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number } } }
+/** The slice of the OpenAI SDK the adapter uses, so tests can stand in for it. */
+export type OpenAIClient = { responses: { create(body: Body, options?: { signal?: AbortSignal }): Promise<unknown> } }
+
+const png = (base64: string) => `data:image/png;base64,${base64}`
+
+/**
+ * Responses API with the GA `computer` tool (spec §7). State rides on `previous_response_id`; instructions are not
+ * carried between responses, so the same instructions and tools go with every request.
+ */
+export class OpenAIAdapter implements Adapter {
+  readonly provider = 'openai' as const
+  readonly canvas = CANVAS.openai
+  private readonly tools = [{ type: 'computer' }, ...TOOL_DEFS.map((t) => ({ type: 'function', ...t, strict: true }))]
+  private previous?: string
+
+  constructor(
+    private readonly client: OpenAIClient,
+    readonly model: string,
+    private readonly instructions: string,
+  ) {}
+
+  async start(input: { task: string; context: string; image?: string }, signal?: AbortSignal): Promise<Turn> {
+    const content: Body[] = [{ type: 'input_text', text: `Task: ${input.task}\n\n${input.context}` }]
+    if (input.image) content.push({ type: 'input_image', image_url: png(input.image), detail: 'original' })
+    return this.send([{ role: 'user', content }], signal)
+  }
+
+  async next(input: { results: CallResult[]; image?: string; notes: string[] }, signal?: AbortSignal): Promise<Turn> {
+    const items: Body[] = input.results.map((r) => {
+      if (r.kind === 'function') return { type: 'function_call_output', call_id: r.callId, output: r.output }
+      if (!input.image) throw new Error('A computer call must be answered with a screenshot.')
+      return {
+        type: 'computer_call_output',
+        call_id: r.callId,
+        output: { type: 'computer_screenshot', image_url: png(input.image), detail: 'original' },
+        ...(r.acknowledged?.length ? { acknowledged_safety_checks: r.acknowledged } : {}),
+      }
+    })
+    if (input.notes.length) items.push({ role: 'user', content: [{ type: 'input_text', text: input.notes.join('\n') }] })
+    return this.send(items, signal)
+  }
+
+  private async send(input: Body[], signal?: AbortSignal): Promise<Turn> {
+    const body: Body = {
+      model: this.model,
+      instructions: this.instructions,
+      tools: this.tools,
+      ...(this.previous ? { previous_response_id: this.previous } : {}),
+      input,
+    }
+    const response = (await this.client.responses.create(body, signal ? { signal } : undefined)) as Response
+    this.previous = response.id
+    const u = response.usage
+    return {
+      ...parseOpenAI(response as Parameters<typeof parseOpenAI>[0]),
+      id: response.id,
+      usage: {
+        inputTokens: u?.input_tokens ?? 0,
+        cachedTokens: u?.input_tokens_details?.cached_tokens ?? 0,
+        cacheWriteTokens: u?.input_tokens_details?.cache_write_tokens ?? 0,
+        outputTokens: u?.output_tokens ?? 0,
+      },
+    }
+  }
+}

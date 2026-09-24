@@ -35,10 +35,52 @@ test('OpenAI: batched actions[], a single action, and pending safety checks', ()
     ],
   })
   assert.deepEqual(turn.actions[0], { kind: 'click', callId: 'c1', x: 10, y: 20, space: 'pixels', button: 'left' })
-  assert.equal(turn.actions[1].kind, 'other')
+  assert.deepEqual(turn.actions[1], { kind: 'type', callId: 'c1', text: 'hi' })
   assert.deepEqual(turn.actions[2], { kind: 'screenshot', callId: 'c2' })
   assert.equal(turn.safety.length, 1)
   assert.deepEqual(turn.text, ['done'])
+})
+
+test('OpenAI: every computer action becomes an IR action; function calls become tools', () => {
+  const turn = parseOpenAI({
+    output: [
+      {
+        type: 'computer_call',
+        call_id: 'c1',
+        actions: [
+          { type: 'double_click', x: 5, y: 6, keys: ['CMD'] },
+          { type: 'click', button: 'wheel', x: 1, y: 2, keys: null },
+          { type: 'click', button: 'back', x: 1, y: 2 },
+          { type: 'drag', path: [{ x: 1, y: 2 }, { x: 3, y: 4 }, { x: 5, y: 6 }] },
+          { type: 'keypress', keys: ['CTRL', 'C'] },
+          { type: 'move', x: 7, y: 8 },
+          { type: 'scroll', x: 9, y: 10, scroll_x: 0, scroll_y: 300 },
+          { type: 'wait' },
+          { type: 'screenshot' },
+        ],
+      },
+      { type: 'function_call', call_id: 'f1', name: 'switch_target', arguments: '{"window_id": 42}' },
+      { type: 'function_call', call_id: 'f2', name: 'done', arguments: '{not json' },
+    ],
+  })
+  assert.deepEqual(turn.actions, [
+    { kind: 'click', callId: 'c1', x: 5, y: 6, space: 'pixels', button: 'left', count: 2, keys: ['CMD'] },
+    { kind: 'click', callId: 'c1', x: 1, y: 2, space: 'pixels', button: 'middle' },
+    { kind: 'other', callId: 'c1', name: 'click', input: { type: 'click', button: 'back', x: 1, y: 2 } },
+    { kind: 'drag', callId: 'c1', path: [{ x: 1, y: 2 }, { x: 3, y: 4 }, { x: 5, y: 6 }], space: 'pixels' },
+    { kind: 'keys', callId: 'c1', keys: ['CTRL', 'C'] },
+    { kind: 'move', callId: 'c1', x: 7, y: 8, space: 'pixels' },
+    { kind: 'scroll', callId: 'c1', x: 9, y: 10, space: 'pixels', dx: 0, dy: 300 },
+    { kind: 'wait', callId: 'c1' },
+    { kind: 'screenshot', callId: 'c1' },
+    { kind: 'tool', callId: 'f1', name: 'switch_target', input: { window_id: 42 } },
+    { kind: 'tool', callId: 'f2', name: 'done', input: null },
+  ])
+})
+
+test('OpenAI: a malformed action is kept as "other", never guessed', () => {
+  const turn = parseOpenAI({ output: [{ type: 'computer_call', call_id: 'c1', action: { type: 'click', button: 'left' } }] })
+  assert.deepEqual(turn.actions, [{ kind: 'other', callId: 'c1', name: 'click', input: { type: 'click', button: 'left' } }])
 })
 
 test('OpenAI: refusal content is surfaced', () => {
