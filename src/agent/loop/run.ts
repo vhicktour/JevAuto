@@ -11,6 +11,8 @@ import { gate } from './gate'
 import { needsFront } from './keys'
 import { blankCanvas, observe, ObserveError, sameView, type Observation, type Target } from './observe'
 import { describeWindow, Targets, type Window } from './targets'
+import { checkUrl } from '../browser/urls'
+import { WEB_APP, WEB_BUNDLE, WEB_PID } from '../browser/web'
 import { ToolInput, type ToolName } from './tools'
 
 export type Approval = { kind: 'action' | 'foreground' | 'budget'; title: string; reason: string; app?: string }
@@ -24,8 +26,8 @@ export type RunDeps = {
   adapter: Adapter
   /** Cua, usually through VisibleMac so the cursor and the island see every action. */
   mac: Mac
-  /** Where keystrokes for a pid go (JevNative ax-focus); 'unknown' when it can't tell. */
-  focus: (pid: number) => Promise<Focus | 'unknown'>
+  /** Where keystrokes go in a window (JevNative for apps, the page for web tabs); 'unknown' when it can't tell. */
+  focus: (pid: number, windowId: number) => Promise<Focus | 'unknown'>
   approve: (approval: Approval) => Promise<Answer>
   ask: (question: string) => Promise<string | null>
   log: { write(event: string, data?: Record<string, unknown>): void }
@@ -43,7 +45,14 @@ export type RunDeps = {
   now?: () => number
   /** The app you are using (JevNative), so it comes back to the front after JevAuto borrows it for a shortcut. */
   frontmost?: () => Promise<{ pid: number } | undefined>
+  /** JevAuto's own browser, for open_url. Without it the run stays on Mac apps. */
+  web?: { open(url: string, windowId?: number): Promise<{ windowId: number; title: string; url: string }> }
+  /** Let open_url reach loopback and private addresses (the eval fixtures). Off by default (spec §5). */
+  allowPrivateUrls?: boolean
 }
+
+/** A web tab in JevAuto's browser: CDP delivers its keys and clicks in the background, so it never needs the front. */
+const onWeb = (t: Target) => t.bundleId === WEB_BUNDLE || t.pid === WEB_PID
 
 type Call = { callId: string; kind: 'computer' | 'function'; actions: IrAction[] }
 type Tool = Extract<IrAction, { kind: 'tool' }>
@@ -220,6 +229,8 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
       }
       case 'open_app':
         return openApp(String(input.name))
+      case 'open_url':
+        return openUrl(String(input.url))
       case 'ask_user': {
         meter.pause()
         announce('needs-you', 'A question for you', String(input.question))
@@ -233,6 +244,23 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
       case 'done':
         return { output: { ok: true }, ended: { status: input.status as RunStatus, summary: String(input.summary) } }
     }
+  }
+
+  async function openUrl(raw: string): Promise<{ output: unknown; changedTarget?: boolean }> {
+    if (!d.web) return { output: { error: 'The web is not available in this run.' } }
+    const checked = checkUrl(raw, { allowPrivate: d.allowPrivateUrls })
+    if (!checked.ok) return { output: { error: checked.reason } }
+    const opened = await d.web.open(checked.url, target && onWeb(target) ? target.windowId : undefined)
+    // Redirects can land somewhere else entirely; the rule applies to where the page ended up (spec §5).
+    const landed = checkUrl(opened.url, { allowPrivate: d.allowPrivateUrls })
+    if (!landed.ok) {
+      await d.web.open('about:blank', opened.windowId).catch(() => undefined)
+      return { output: { error: `The page redirected to a blocked address. ${landed.reason}` } }
+    }
+    const listed = (await targets.windows(signal)).find((w) => w.windowId === opened.windowId)
+    await retarget(listed ?? { pid: WEB_PID, windowId: opened.windowId, app: WEB_APP, title: opened.title, bundleId: WEB_BUNDLE })
+    d.log.write('open_url', { url: opened.url })
+    return { output: { ok: true, target: describeWindow(target!), url: opened.url }, changedTarget: true }
   }
 
   async function openApp(name: string): Promise<{ output: unknown; changedTarget?: boolean }> {
@@ -278,7 +306,7 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
     let element: ElementInfo | undefined
     let plan: Plan
     if (a.kind === 'type' || a.kind === 'keys') {
-      focus = await d.focus(t.pid)
+      focus = await d.focus(t.pid, t.windowId)
       // Another window was snapshotted since ours; Cua may treat our element indexes as stale, so read them again.
       if (a.kind === 'type' && snap.probes !== targets.probes) await refreshSnap()
       const view = { ...obs, target: t, snapshotId: snap.id, elements: snap.elements }
@@ -323,7 +351,7 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
     // Shortcuts never reach a background app, and Cua refuses keys and typing for an app with several windows; both
     // work with the window in front, which needs your OK (spec §4). Cua's foreground delivery drops ⌘ unless the app
     // really is frontmost, so the window is brought forward first.
-    const shortcut = a.kind === 'keys' && needsFront(a.keys)
+    const shortcut = a.kind === 'keys' && !onWeb(t) && needsFront(a.keys)
     let result = shortcut ? undefined : await runPlan(plan, d.mac, signal)
     const undelivered = !result || (!result.ok && result.code === 'same_pid_keyboard_ambiguity') || result.escalation === 'delivery_failed'
     // Modifier clicks and some drags are refused in the background (spec §4: "foreground, with your OK").

@@ -13,6 +13,8 @@ import { runSpikeA, SpikeAParams, startLongType } from './spikes/spike-a'
 import { spikeBCapture, SpikeBParams } from './spikes/spike-b'
 import { runDemo } from './spikes/demo'
 import { VisibleMac } from './mac/visible'
+import { RoutingMac } from './browser/routing'
+import { WebDriver } from './browser/web'
 
 let mac: MacDriver | undefined
 export async function macDriver(init: { cuaSdkPath: string; cuaLibraryPath: string }): Promise<MacDriver> {
@@ -20,10 +22,15 @@ export async function macDriver(init: { cuaSdkPath: string; cuaLibraryPath: stri
   return mac
 }
 
+let web: WebDriver | undefined
 let visible: VisibleMac | undefined
-/** The driver the agent's work goes through: every action is announced to the cursor and the island first (spec §9). */
+/**
+ * The driver the agent's work goes through: Mac apps through Cua and web pages through the agent Chrome, behind one
+ * router, with every action announced to the cursor and the island first (spec §9).
+ */
 async function visibleMac(ctx: HandlerContext): Promise<VisibleMac> {
-  if (!visible) visible = new VisibleMac(await macDriver(ctx.init), ctx.emit)
+  if (!web && ctx.init.browserProfileDir) web = new WebDriver(ctx.init.browserProfileDir)
+  if (!visible) visible = new VisibleMac(web ? new RoutingMac(await macDriver(ctx.init), web) : await macDriver(ctx.init), ctx.emit)
   return visible
 }
 
@@ -46,7 +53,7 @@ async function agentRun(params: unknown, ctx: HandlerContext) {
       task,
       adapter: openAIAdapter(PHASE0_MODELS.openai, INSTRUCTIONS, apiKey),
       mac,
-      focus: (pid) => readFocus(ctx.init.nativeHelperPath, pid).catch(() => 'unknown' as const),
+      focus: (pid, windowId) => (web?.isWeb(windowId) ? web.focus(windowId) : readFocus(ctx.init.nativeHelperPath, pid)).catch(() => 'unknown' as const),
       frontmost: () => readFrontmost(ctx.init.nativeHelperPath).catch(() => undefined),
       approve: async (approval): Promise<Answer> => {
         const id = randomUUID()
@@ -66,6 +73,7 @@ async function agentRun(params: unknown, ctx: HandlerContext) {
       signal: ctx.signal,
       emit: ctx.emit,
       front: watch,
+      ...(web ? { web } : {}),
     })
     return { ...result, log: log.path }
   } finally {
@@ -103,6 +111,8 @@ export const handlers: Partial<Record<AgentMethod, Handler>> = {
 }
 
 export async function shutdown(): Promise<void> {
+  await web?.close()
+  web = undefined
   await mac?.close()
   mac = undefined
   visible = undefined

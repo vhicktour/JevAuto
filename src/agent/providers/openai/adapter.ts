@@ -72,8 +72,14 @@ export class OpenAIAdapter implements Adapter {
   }
 }
 
+/**
+ * The SDK waits up to ten minutes by default; one request once took 303 s. A turn is only acted on once it has fully
+ * arrived, so cutting a hung request off and asking again is safe.
+ */
+export const OPENAI_CLIENT_OPTIONS = { timeout: 90_000, maxRetries: 2 } as const
+
 /** An adapter on the real SDK. Without `apiKey` the SDK reads OPENAI_API_KEY (the terminal runner's .env.local). */
 export function openAIAdapter(model: string, instructions: string, apiKey?: string): OpenAIAdapter {
   // The SDK's request types lag the computer tool (Spike C), so the adapter takes the narrow client shape it uses.
-  return new OpenAIAdapter(new OpenAI(apiKey ? { apiKey } : {}) as unknown as OpenAIClient, model, instructions)
+  return new OpenAIAdapter(new OpenAI({ ...OPENAI_CLIENT_OPTIONS, ...(apiKey ? { apiKey } : {}) }) as unknown as OpenAIClient, model, instructions)
 }

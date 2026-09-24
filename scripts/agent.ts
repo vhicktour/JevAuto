@@ -76,7 +76,7 @@ function emit(name: string, data: unknown) {
   }
 }
 
-const { driver, focus, frontmost, adapter } = await localRuntime(root)
+const { mac, web, focus, frontmost, adapter, close } = await localRuntime(root)
 const runId = `${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}`
 const log = RunLog.open(join(homedir(), 'Library/Application Support/JevAuto Dev/runs'), runId)
 const { maxActions, maxMs, maxUsd } = args.budget
@@ -85,7 +85,8 @@ console.log(`JevAuto · ${args.model} · up to ${maxActions} actions, ${maxMs / 
 const result = await runTask({
   task: args.task,
   adapter: adapter(args.model),
-  mac: new VisibleMac(driver, emit),
+  mac: new VisibleMac(mac, emit),
+  web,
   focus,
   frontmost,
   approve,
@@ -103,5 +104,5 @@ const mark = result.status === 'success' || result.status === 'ended' ? '✓' : 
 console.log(`\n${mark} ${result.summary}`)
 console.log(`  ${result.actions} actions · ${result.turns} turns · ${(result.ms / 1000).toFixed(1)} s · $${result.usd.toFixed(3)} · ${result.status}`)
 console.log(`  Run log: ${log.path}`)
-await driver.close()
+await close()
 process.exit(mark === '✓' ? 0 : 1)

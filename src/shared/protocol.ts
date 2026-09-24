@@ -13,6 +13,8 @@ export const AgentInit = z.object({
   nativeHelperPath: z.string().min(1),
   evidenceDir: z.string().min(1),
   runsDir: z.string().min(1),
+  /** The agent Chrome's profile; without it the agent works in Mac apps only. */
+  browserProfileDir: z.string().min(1).optional(),
   /** Provider keys travel only in this message: never in the environment, argv, logs or a renderer (spec §8). */
   keys: z
     .object({ openai: z.string(), anthropic: z.string(), anthropicWorkspace: z.string(), google: z.string(), typesafe: z.string() })

@@ -13,13 +13,18 @@ const object = (properties: Record<string, unknown>) => ({
 export const TOOL_DEFS: ToolDef[] = [
   {
     name: 'list_windows',
-    description: 'List the windows you can work in, frontmost first: window_id, app and title.',
+    description: 'List the windows and web pages you can work in, frontmost first: window_id, app and title (web pages show as the app "Web").',
     parameters: object({}),
   },
   {
     name: 'open_app',
     description: 'Open an app in the background, or find it if it is already running, and make its window the target.',
     parameters: object({ name: { type: 'string', description: 'The app name, for example "Notes" or "TextEdit".' } }),
+  },
+  {
+    name: 'open_url',
+    description: 'Open a website in JevAuto’s own browser: in the current web page if the target is one, else in a new tab, which becomes the target.',
+    parameters: object({ url: { type: 'string', description: 'The web address, for example "example.com/tickets".' } }),
   },
   {
     name: 'switch_target',
@@ -44,6 +49,7 @@ export const TOOL_DEFS: ToolDef[] = [
 export const ToolInput = {
   list_windows: z.object({}).strict(),
   open_app: z.object({ name: z.string().trim().min(1).max(100) }).strict(),
+  open_url: z.object({ url: z.string().trim().min(1).max(2000) }).strict(),
   switch_target: z.object({ window_id: z.number().int() }).strict(),
   ask_user: z.object({ question: z.string().trim().min(1).max(1000) }).strict(),
   done: z.object({ status: z.enum(['success', 'failure', 'blocked']), summary: z.string().max(2000) }).strict(),

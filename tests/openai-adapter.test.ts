@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { OpenAIAdapter } from '../src/agent/providers/openai/adapter'
+import { OpenAIAdapter, OPENAI_CLIENT_OPTIONS } from '../src/agent/providers/openai/adapter'
 import { TOOL_DEFS } from '../src/agent/loop/tools'
 import { costUsd } from '../src/agent/providers/prices'
 
@@ -113,4 +113,8 @@ test('cost follows OpenAI usage: uncached, cached and cache-write input are pric
   const expected = (3 * 2 + 2039 * 0.2 + 1228 * 2.5 + 31 * 10) / 1e6
   assert.ok(Math.abs(costUsd('gpt-6-sol', usage)! - expected) < 1e-12)
   assert.equal(costUsd('no-such-model', usage), undefined)
+})
+
+test('a model request that hangs is cut off and retried instead of stalling the run for minutes', () => {
+  assert.deepEqual(OPENAI_CLIENT_OPTIONS, { timeout: 90_000, maxRetries: 2 })
 })

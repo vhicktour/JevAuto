@@ -10,6 +10,7 @@ import { createReport, writeReport } from '../../src/shared/report'
 import { PHASE0_MODELS } from '../../src/shared/constants'
 import { avoidBundles } from '../../scripts/agent-args'
 import { TASKS, type DesktopTask } from './tasks'
+import { startFixtureServer, type FixtureServer } from '../fixtures/server'
 
 const root = resolve(import.meta.dirname, '../..')
 const { values } = parseArgs({
@@ -38,8 +39,10 @@ process.on('SIGINT', () => {
   setTimeout(() => process.exit(130), 250).unref()
 })
 
-const { driver, focus, frontmost, adapter } = await localRuntime(root)
-const mac = new VisibleMac(driver, () => {})
+const { mac: routed, web, focus, frontmost, adapter, close } = await localRuntime(root)
+const mac = new VisibleMac(routed, () => {})
+const server: FixtureServer | undefined = tasks.some((t) => t.web) ? await startFixtureServer() : undefined
+const site = server ? `http://127.0.0.1:${server.port}` : ''
 const dir = join(homedir(), 'JevAutoSandbox', 'suite')
 await mkdir(dir, { recursive: true })
 const report = createReport('desktop', `${model} ×${repeat}`)
@@ -49,7 +52,7 @@ console.log(`Desktop suite · ${model} · ${tasks.map((t) => t.id).join(', ')} �
 for (let r = 1; r <= repeat; r++)
   for (const task of tasks) {
     const stamp = `${Date.now().toString(36)}`
-    const ctx = { mac, dir, stamp }
+    const ctx = { mac, dir, stamp, web, site }
     const name = `${task.id} #${r}`
     try {
       const data = await task.setup(ctx)
@@ -60,6 +63,8 @@ for (let r = 1; r <= repeat; r++)
         task: task.prompt(data),
         adapter: adapter(model),
         mac,
+        web,
+        allowPrivateUrls: true, // the web fixtures run on 127.0.0.1
         focus,
         frontmost,
         approve: async (a) => (approvals.push(a), policy(task, a)),
@@ -94,5 +99,6 @@ for (let r = 1; r <= repeat; r++)
 
 const out = report.finish({ model, repeat, usd: Math.round(usd * 1000) / 1000, skipped })
 console.log(`\n${out.summary.passed}/${out.checks.length} passed · $${usd.toFixed(2)} · ${await writeReport(join(root, 'evidence'), out)}`)
-await driver.close()
+await close()
+await server?.close()
 process.exit(0)

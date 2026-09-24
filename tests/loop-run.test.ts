@@ -7,6 +7,7 @@ import type { Mac } from '../src/agent/mac/visible'
 import type { CuaResult } from '../src/agent/mac/cua'
 import type { IrAction, SafetySignal } from '../src/agent/providers/ir'
 import type { Focus } from '../src/shared/native'
+import { WEB_PID, WEB_BUNDLE } from '../src/agent/browser/web'
 
 // ---- a small fake Mac: windows, apps, element snapshots, screenshots, and a record of every call ----
 
@@ -316,6 +317,72 @@ test('in Watch mode the target comes to the front and shortcuts need no extra OK
   assert.equal(approvals.length, 0)
   assert.deepEqual(world.calls.filter((c) => c.name === 'bring_to_front').map((c) => c.args.pid), [42])
   assert.ok(world.calls.some((c) => c.name === 'hotkey' && c.args.delivery_mode === 'foreground'))
+})
+
+function webWorld() {
+  const world = new World()
+  const opened: string[] = []
+  const web = {
+    open: async (url: string, windowId?: number) => {
+      opened.push(url)
+      const id = windowId ?? 2 ** 30
+      if (!world.windows.some((w) => w.window_id === id)) {
+        world.windows.push({ window_id: id, pid: WEB_PID, app_name: 'Web', title: 'Example', bounds: { x: 0, y: 100, width: 640, height: 400 }, z_index: 30, colour: 120 })
+        world.apps.push({ pid: WEB_PID, bundle_id: WEB_BUNDLE, name: 'Web', running: true })
+        world.elements[id] = [{ element_index: 0, role: 'AXTextField', label: 'Search', frame: { x: 10, y: 110, w: 200, h: 20 } }]
+      }
+      return { windowId: id, title: 'Example', url: new URL(url).href }
+    },
+  }
+  return { world, web, opened }
+}
+
+test('open_url opens a website as the target; your own network and odd schemes are refused', async () => {
+  const { world, web, opened } = webWorld()
+  const script = new Script([
+    { actions: [{ kind: 'tool', callId: 'f1', name: 'open_url', input: { url: 'http://192.168.1.1/admin' } }] },
+    { actions: [{ kind: 'tool', callId: 'f2', name: 'open_url', input: { url: 'javascript:alert(1)' } }] },
+    { actions: [{ kind: 'tool', callId: 'f3', name: 'open_url', input: { url: 'example.com' } }] },
+    { actions: [done('f4')] },
+  ])
+  await runTask(deps(world, script, { web }).d)
+  assert.deepEqual(opened, ['https://example.com/'])
+  assert.match((script.nexts[0].results[0] as { output: string }).output, /own network/)
+  assert.match((script.nexts[1].results[0] as { output: string }).output, /http/)
+  assert.match((script.nexts[2].results[0] as { output: string }).output, /Example/)
+  assert.ok(world.calls.some((c) => c.name === 'get_window_state' && c.args.window_id === 2 ** 30))
+})
+
+test('on a web page a shortcut goes straight to the page, with no bring-forward and no extra OK', async () => {
+  const { world, web } = webWorld()
+  const script = new Script([
+    { actions: [{ kind: 'tool', callId: 'f1', name: 'open_url', input: { url: 'https://example.com' } }] },
+    { actions: [{ kind: 'keys', callId: 'c1', keys: ['CMD', 'A'] }] },
+    { actions: [done('f2')] },
+  ])
+  const { d, approvals } = deps(world, script, { web })
+  await runTask(d)
+  assert.equal(approvals.length, 0)
+  const hotkey = world.calls.find((c) => c.name === 'hotkey')!
+  assert.deepEqual([hotkey.args.window_id, hotkey.args.delivery_mode], [2 ** 30, undefined])
+  assert.ok(!world.calls.some((c) => c.name === 'bring_to_front'))
+})
+
+test('typing on a web page asks the page, not the Mac, where focus is', async () => {
+  const { world, web } = webWorld()
+  const asked: number[] = []
+  const script = new Script([
+    { actions: [{ kind: 'tool', callId: 'f1', name: 'open_url', input: { url: 'https://example.com' } }] },
+    { actions: [{ kind: 'type', callId: 'c1', text: 'hello' }] },
+    { actions: [done('f2')] },
+  ])
+  const { d } = deps(world, script, {
+    web,
+    focus: async (_pid, windowId) => (asked.push(windowId), { ok: true, role: 'AXTextField', frame: { x: 10, y: 110, width: 200, height: 20 }, webArea: true, secure: false }),
+  })
+  await runTask(d)
+  assert.deepEqual(asked, [2 ** 30])
+  assert.equal(world.calls.find((c) => c.name === 'type_text')?.args.element_index, 0)
 })
 
 test('switching the target mid-turn halts the pointer actions that were aimed at the old window', async () => {

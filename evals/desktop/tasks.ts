@@ -9,8 +9,9 @@ import type { Mac } from '../../src/agent/mac/visible'
 import type { Approval, RunResult } from '../../src/agent/loop/run'
 import { calculatorDisplay, clearKey } from '../../src/agent/spikes/demo'
 import { answers, appearanceOf, mentionsNumber, rtfBold } from './checks'
+import type { WebDriver } from '../../src/agent/browser/web'
 
-export type Ctx = { mac: Mac; dir: string; stamp: string }
+export type Ctx = { mac: Mac; dir: string; stamp: string; web: WebDriver; site: string }
 type Data = Record<string, unknown> & { pid?: number; windowId?: number }
 export type Verdict = { pass: boolean | null; detail?: Record<string, unknown> }
 /** What the run did: its result, the approvals it asked for, and every app it made the target. */
@@ -21,6 +22,8 @@ export type DesktopTask = {
   personal?: boolean
   /** Approvals the run must stop at (Mail's send); the task passes only when it asked and was refused. */
   deny?: RegExp
+  /** Uses the web fixtures (served on 127.0.0.1) through JevAuto's browser. */
+  web?: boolean
   setup(c: Ctx): Promise<Data>
   prompt(d: Data): string
   check(c: Ctx, d: Data, o: Outcome): Promise<Verdict>
@@ -72,6 +75,12 @@ async function textAreaValue(mac: Mac, pid: number, windowId: number): Promise<s
   const s = await mac.call('get_window_state', { pid, window_id: windowId, include_screenshot: false })
   const area = windowStateOf(s.structured).elements.find((e) => e.role === 'AXTextArea')
   return typeof area?.value === 'string' ? area.value : ''
+}
+
+/** The title of the tab showing `path` on the fixture site, read straight from the browser. */
+async function tabTitle(c: Ctx, path: string): Promise<string | undefined> {
+  const tab = (await c.web.windows()).find((w) => w.url.startsWith(`${c.site}${path}`))
+  return tab?.title
 }
 
 async function makePdf(file: string, pages: { heading: string; body: string }[]) {
@@ -193,6 +202,43 @@ export const TASKS: DesktopTask[] = [
       const opened = apps.includes('System Settings')
       return { pass: opened && answers(result.summary, expected, ['Light', 'Dark', 'Auto'].filter((o) => o !== expected)), detail: { expected, opened } }
     },
+  },
+  {
+    id: 'web-form',
+    web: true,
+    setup: async (c) => ({ site: c.site, name: `Ada ${c.stamp}` }),
+    prompt: (d) => `Open the page ${d.site}/form, type ${d.name} into the Name field, then press the Save button.`,
+    check: async (c, d) => {
+      const title = await tabTitle(c, '/form')
+      return { pass: title === `saved ${d.name}`, detail: { title } }
+    },
+  },
+  {
+    id: 'web-search',
+    web: true,
+    setup: async (c) => ({ site: c.site, query: `lanterns ${c.stamp}` }),
+    prompt: (d) => `Open the page ${d.site}/search and search for "${d.query}".`,
+    check: async (c, d) => {
+      const title = await tabTitle(c, '/results')
+      return { pass: title === `Results for ${d.query}`, detail: { title } }
+    },
+  },
+  {
+    id: 'web-to-textedit',
+    web: true,
+    async setup(c) {
+      const total = (100 + Math.floor(Math.random() * 90000) / 100).toFixed(2)
+      const file = join(c.dir, `web-${c.stamp}.txt`)
+      await writeFile(file, '')
+      const pid = await open(c.mac, 'com.apple.TextEdit', [file])
+      return { site: c.site, total, file, pid, windowId: (await windowTitled(c.mac, pid, basename(file))).window_id, name: basename(file) }
+    },
+    prompt: (d) => `Open the page ${d.site}/price?total=${d.total}, find the order total, then in TextEdit, in the document ${d.name}, type exactly that total including the dollar sign.`,
+    async check(c, d) {
+      const text = (await textAreaValue(c.mac, d.pid!, d.windowId!)).trim()
+      return { pass: text === `$${d.total}`, detail: { text } }
+    },
+    cleanup: (c, d) => closeWindow(c.mac, d.pid!, d.windowId!),
   },
   {
     id: 'notes',

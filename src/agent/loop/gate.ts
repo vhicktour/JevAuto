@@ -26,7 +26,7 @@ const refuse = (reason: string): Verdict => ({ decision: 'refuse', reason })
 const EXCLUDED: { why: string; bundles: string[]; prefixes?: string[]; names: string[] }[] = [
   { why: 'JevAuto does not control itself.', bundles: [], prefixes: ['personal.jevauto.desktop'], names: ['jevauto', 'jevauto dev'] },
   {
-    why: 'Browsers are off limits here; web work happens in JevAuto’s own browser.',
+    why: 'Other browsers are off limits; use open_url to open websites in JevAuto’s own browser.',
     bundles: ['com.apple.SafariTechnologyPreview', 'org.chromium.Chromium', 'com.vivaldi.Vivaldi', 'com.kagi.kagimacOS', 'app.zen-browser.zen', 'ai.perplexity.comet', 'com.openai.atlas', 'org.torproject.torbrowser', 'com.duckduckgo.macos.browser', 'com.sigmaos.sigmaos.macos', 'ru.yandex.desktop.yandex-browser', 'com.naver.Whale'],
     prefixes: ['com.apple.Safari', 'com.google.Chrome', 'org.mozilla.', 'com.microsoft.edgemac', 'com.brave.Browser', 'com.operasoftware.Opera', 'company.thebrowser.'],
     names: ['safari', 'safari technology preview', 'google chrome', 'google chrome canary', 'chromium', 'firefox', 'firefox developer edition', 'firefox nightly', 'microsoft edge', 'brave browser', 'opera', 'opera gx', 'vivaldi', 'arc', 'dia', 'orion', 'zen', 'comet', 'chatgpt atlas', 'tor browser', 'duckduckgo', 'sigmaos', 'yandex', 'whale'],

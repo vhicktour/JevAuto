@@ -137,6 +137,7 @@ async function startAgent() {
     ...agentPaths(),
     evidenceDir: join(app.getPath('userData'), 'evidence'),
     runsDir: join(app.getPath('userData'), 'runs'),
+    browserProfileDir: join(app.getPath('userData'), 'browser-profile'),
     keys: loadKeys(),
   }
   if (!init.keys?.openai) emit('No OpenAI key found. Add OPENAI_API_KEY to .env.local and restart JevAuto.')
