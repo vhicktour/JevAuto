@@ -436,6 +436,7 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
       if (ended) return finish(ended.status, ended.summary)
       const moved = await look()
       if (moved) notes.push(moved)
+      if (obs?.axMissing) notes.push(`${obs.target.app} did not answer accessibility queries in time, so this screenshot is all JevAuto can see of it.`)
       if (acted && before && obs && before.target.windowId === obs.target.windowId && sameView(before, obs)) stall += 1
       else if (acted) stall = 0
       if (stall >= 3) return finish('stall', 'The window stopped changing after three rounds of actions, so JevAuto stopped.')

@@ -7,7 +7,7 @@ import { z } from 'zod'
 import { trafficLights, windowsOf, windowStateOf, type WindowInfo } from '../../src/agent/mac/results'
 import type { Mac } from '../../src/agent/mac/visible'
 import type { Approval, RunResult } from '../../src/agent/loop/run'
-import { calculatorDisplay } from '../../src/agent/spikes/demo'
+import { calculatorDisplay, clearKey } from '../../src/agent/spikes/demo'
 import { answers, appearanceOf, mentionsNumber, rtfBold } from './checks'
 
 export type Ctx = { mac: Mac; dir: string; stamp: string }
@@ -161,7 +161,18 @@ export const TASKS: DesktopTask[] = [
     id: 'calculator',
     async setup(c) {
       const pid = await open(c.mac, 'com.apple.calculator')
-      return { pid, windowId: (await windowTitled(c.mac, pid, 'Calculator')).window_id }
+      const w = await windowTitled(c.mac, pid, 'Calculator')
+      // Start from All Clear, so a result left from an earlier run can never pass for this one.
+      for (let i = 0; i < 3; i++) {
+        const s = windowStateOf((await c.mac.call('get_window_state', { pid, window_id: w.window_id, include_screenshot: false })).structured)
+        const key = clearKey(s.elements)
+        if (!key) throw new Error('Calculator shows no clear key')
+        await c.mac.call('click', { pid, window_id: w.window_id, element_index: key.element_index, snapshot_id: s.snapshotId })
+        if (key.label === 'All Clear') break
+      }
+      const display = await calculatorDisplay(c.mac, w, new AbortController().signal)
+      if (display !== '0') throw new Error(`Calculator did not clear (shows ${display})`)
+      return { pid, windowId: w.window_id }
     },
     prompt: () => 'In Calculator, work out 123 × 45 − 67 and tell me the answer.',
     async check(c, d, { result }) {

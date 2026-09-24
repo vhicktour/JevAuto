@@ -75,6 +75,25 @@ async function viewOf(png: string, elements: unknown[] = ELEMENTS) {
   return observe(mac, { pid: 1, windowId: 2, app: 'TextEdit' }, { width: 1280, height: 800 })
 }
 
+test('when the AX walk times out, observe falls back to the screenshot alone', async () => {
+  const png = await pngOf(1600, 1000)
+  const calls: Record<string, unknown>[] = []
+  const mac: Mac = {
+    call: async (_name, args) => {
+      calls.push(args)
+      if (args.include_accessibility_tree === false)
+        return ok({ window_id: 7, window_bounds: { x: 100, y: 50, width: 800, height: 500 }, screenshot_width: 1600, screenshot_height: 1000 }, [{ mimeType: 'image/png', dataBase64: png }])
+      return { text: 'AX tree walk for pid=9 timed out after 20 s.', imageCount: 0, images: [], structured: {}, isError: true, durationMs: 20_000 }
+    },
+    close: async () => {},
+  }
+  const obs = await observe(mac, { pid: 9, windowId: 7, app: 'Calculator' }, { width: 1280, height: 800 })
+  assert.equal(obs.axMissing, true)
+  assert.deepEqual(obs.elements, [])
+  assert.deepEqual(obs.frame.capture, { width: 1600, height: 1000 })
+  assert.equal(calls.length, 2)
+})
+
 test('sameView ignores a blinking caret but sees a line of text turn bold', async () => {
   const line = { x: 40, y: 60, w: 600, h: 18 }
   const plain = await viewOf(await textPng(1112, 1568, [line]))

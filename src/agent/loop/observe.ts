@@ -19,6 +19,8 @@ export type Observation = {
   /** A 160×100 grayscale thumbnail and the AX text (roles, labels, values), for stall detection. */
   thumb: Buffer
   axText: string
+  /** The AX walk timed out, so this observation is the screenshot alone: no elements to gate or type into. */
+  axMissing?: boolean
 }
 
 export class ObserveError extends Error {
@@ -33,7 +35,14 @@ export class ObserveError extends Error {
 type WindowState = { window_bounds?: Rect; window_title?: string; code?: string }
 
 export async function observe(mac: Mac, target: Target, canvas: Size, signal?: AbortSignal): Promise<Observation> {
-  const r = await mac.call('get_window_state', { pid: target.pid, window_id: target.windowId }, signal)
+  const args = { pid: target.pid, window_id: target.windowId }
+  let r = await mac.call('get_window_state', args, signal)
+  let axMissing = false
+  // Cua gives up on an AX walk after 20 s (a hung app, a huge tree); the screenshot alone still lets the model work.
+  if (r.isError && /timed out/i.test(r.text)) {
+    r = await mac.call('get_window_state', { ...args, include_accessibility_tree: false }, signal)
+    axMissing = true
+  }
   const s = (r.structured ?? {}) as WindowState
   if (r.isError) throw new ObserveError(r.text.slice(0, 300), s.code ?? r.errorCode)
   const shot = r.images[0]
@@ -64,6 +73,7 @@ export async function observe(mac: Mac, target: Target, canvas: Size, signal?: A
     title: s.window_title,
     thumb,
     axText: state.elements.map((e) => `${e.role}|${e.label ?? ''}|${typeof e.value === 'string' ? e.value : ''}`).join('\n'),
+    ...(axMissing ? { axMissing } : {}),
   }
 }
 
