@@ -45,7 +45,8 @@ function createHarness(): BrowserWindow {
   })
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   window.webContents.on('will-navigate', (event) => event.preventDefault())
-  window.once('ready-to-show', () => window.show())
+  // --background (Spike B full screen): show without activating, so the current Space stays put.
+  window.once('ready-to-show', () => (process.argv.includes('--background') ? window.showInactive() : window.show()))
   if (process.env.ELECTRON_RENDERER_URL && !app.isPackaged)
     void window.loadURL(`${process.env.ELECTRON_RENDERER_URL}?surface=harness`)
   else void window.loadFile(join(root, '../renderer/index.html'), { query: { surface: 'harness' } })
@@ -123,6 +124,11 @@ app.whenReady().then(async () => {
       evidenceDir: lastInit!.evidenceDir,
       argv: process.argv,
       emit,
+      preload: join(root, '../preload/index.cjs'),
+      load: (w, surface) =>
+        process.env.ELECTRON_RENDERER_URL && !app.isPackaged
+          ? void w.loadURL(`${process.env.ELECTRON_RENDERER_URL}?surface=${surface}`)
+          : void w.loadFile(join(root, '../renderer/index.html'), { query: { surface } }),
     })
   } catch (error) {
     emit(`spike failed: ${error instanceof Error ? error.message : error}`)

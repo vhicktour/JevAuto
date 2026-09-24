@@ -4,7 +4,7 @@ import { resolve } from 'node:path'
 
 const args = process.argv.slice(2)
 if (args[0] !== 'dev') {
-  console.error('usage: node scripts/app.mjs dev [--spike=skeleton|a|b] [--only=NAME] [--no-build]')
+  console.error('usage: node scripts/app.mjs dev [--spike=skeleton|a|b] [--only=NAME] [--background] [--no-build]')
   process.exit(64)
 }
 const identity = process.env.JEVAUTO_DEV_IDENTITY ?? 'Victor Udeh (6T42U5DBW2)'
@@ -25,7 +25,9 @@ if (!existsSync(appPath)) {
   console.error(`Missing ${appPath}; run without --no-build first.`)
   process.exit(1)
 }
-const passthrough = args.filter((a) => a.startsWith('--spike=') || a.startsWith('--only='))
+const passthrough = args.filter((a) => a.startsWith('--spike=') || a.startsWith('--only=') || a === '--background')
 // LaunchServices makes JevAuto Dev its own responsible process for TCC (spec §12 Phase 0E).
-run('open', ['-n', '-a', appPath, '--args', ...passthrough, '--launch=open'])
+// --background launches without activating, so a full-screen Space stays current (Spike B).
+const background = args.includes('--background') ? ['-g'] : []
+run('open', [...background, '-n', '-a', appPath, '--args', ...passthrough, '--launch=open'])
 console.log(`Launched ${appPath} ${passthrough.join(' ')} through LaunchServices.`)
