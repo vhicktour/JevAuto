@@ -157,11 +157,14 @@ export async function runSpikeA(mac: Mac, init: AgentInit, params: z.infer<typeo
   // Setup: two TextEdit documents in the sandbox, opened in the background.
   const sandbox = join(homedir(), 'JevAutoSandbox')
   await mkdir(sandbox, { recursive: true })
-  const doc1 = join(sandbox, 'spike-a-1.txt')
-  const doc2 = join(sandbox, 'spike-a-2.txt')
+  // Fresh names every run: a TextEdit still holding an older copy can never raise an autosave conflict.
+  const run = new Date().toISOString().replace(/[:.]/g, '-')
+  const doc1 = join(sandbox, `spike-a-1-${run}.txt`)
+  const doc2 = join(sandbox, `spike-a-2-${run}.txt`)
   await writeFile(doc1, 'first document\n')
   await writeFile(doc2, 'second document\n')
-  const launched = await call('launch_app', { bundle_id: 'com.apple.TextEdit', urls: [pathToFileURL(doc1).href, pathToFileURL(doc2).href] })
+  // A separate TextEdit instance: the spike never touches documents you have open, and kill_app ends only its own.
+  const launched = await call('launch_app', { bundle_id: 'com.apple.TextEdit', creates_new_application_instance: true, urls: [pathToFileURL(doc1).href, pathToFileURL(doc2).href] })
   const pid = z.object({ pid: z.number() }).passthrough().parse(launched.structured).pid
   let w1: WindowInfo | undefined
   let w2: WindowInfo | undefined
