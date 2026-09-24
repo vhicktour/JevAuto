@@ -25,6 +25,8 @@ const sameDocument = (url: string | undefined) => {
   return u.href === rendererEntry()
 }
 let ui: UiCoordinator | undefined
+/** Watch mode, on by default: targets come to the front so you can see the cursor work. Off keeps JevAuto in the background. */
+let watch = true
 const status: string[] = ['JevAuto: starting']
 
 export function emit(line: string) {
@@ -49,6 +51,8 @@ const Command = z.discriminatedUnion('type', [
   z.object({ type: z.literal('answer'), id: z.string().min(1), answer: z.enum(['once', 'run', 'deny']) }),
   z.object({ type: z.literal('reply'), id: z.string().min(1), text: z.string().max(4000).nullable() }),
   z.object({ type: z.literal('command-bar'), open: z.boolean() }),
+  z.object({ type: z.literal('settings') }),
+  z.object({ type: z.literal('watch'), on: z.boolean() }),
 ])
 
 ipcMain.handle('jevauto:command', (event, raw: unknown) => {
@@ -57,6 +61,12 @@ ipcMain.handle('jevauto:command', (event, raw: unknown) => {
   if (!parsed.success) return { ok: false, error: 'Unknown command' }
   const command = parsed.data
   if (command.type === 'status') return { ok: true, value: status }
+  if (command.type === 'settings') return { ok: true, value: { watch } }
+  if (command.type === 'watch') {
+    watch = command.on
+    broadcast({ type: 'settings', watch })
+    return { ok: true, value: null }
+  }
   if (command.type === 'stop') stopWork()
   else if (command.type === 'run') void startRun(command.spike)
   else if (command.type === 'task') void startTask(command.text)
@@ -83,6 +93,8 @@ function relay(name: string, data: unknown) {
     : undefined
   if (event) broadcast(event)
   else emit(`agent event ${name}: ${JSON.stringify(data)}`)
+  // A question needs typing, so the window comes back even if Watch mode moved it aside.
+  if (event?.type === 'question' && !ui?.activity.isVisible()) ui?.activity.show()
 }
 
 function parsedEvent<T>(schema: z.ZodType<T>, data: unknown, wrap: (value: T) => UiEvent): UiEvent | undefined {
@@ -203,9 +215,12 @@ async function startTask(task: string) {
   }
   const controller = new AbortController()
   run = controller
+  // In Watch mode JevAuto's own window steps aside so it never covers the app being worked in; the island stays.
+  const stepAside = watch && ui?.activity.isVisible() === true
+  if (stepAside) ui?.activity.hide()
   broadcast({ type: 'status', status: { state: 'working', title: task } })
   try {
-    const r = await supervisor.request<RunOutcome>('agent.run', { task }, { signal: controller.signal })
+    const r = await supervisor.request<RunOutcome>('agent.run', { task, watch }, { signal: controller.signal })
     emit(`${r.status}: ${r.summary} (${r.actions} actions, ${r.turns} turns, ${(r.ms / 1000).toFixed(1)} s, $${r.usd.toFixed(3)}) · log ${r.log}`)
   } catch (error) {
     if (!controller.signal.aborted) {
@@ -215,6 +230,7 @@ async function startTask(task: string) {
     }
   } finally {
     if (run === controller) run = undefined
+    if (stepAside) ui?.activity.showInactive()
   }
 }
 

@@ -28,22 +28,24 @@ async function visibleMac(ctx: HandlerContext): Promise<VisibleMac> {
 }
 
 const CuaCall = z.object({ name: z.string().min(1), args: z.record(z.string(), z.unknown()).default({}) })
-const AgentRun = z.object({ task: z.string().trim().min(1).max(2000) })
+const AgentRun = z.object({ task: z.string().trim().min(1).max(2000), watch: z.boolean().default(false) })
 /** Unanswered approvals expire as a no (spec §8); a question waits longer. */
 const APPROVAL_MS = 60_000
 const QUESTION_MS = 5 * 60_000
 
 /** Runs one task through the loop, asking you (through main, the island and the activity window) when it must. */
 async function agentRun(params: unknown, ctx: HandlerContext) {
-  const { task } = AgentRun.parse(params)
+  const { task, watch } = AgentRun.parse(params)
   const apiKey = ctx.init.keys?.openai
   if (!apiKey) throw new Error('No OpenAI key: add OPENAI_API_KEY to .env.local, then restart JevAuto.')
   const log = RunLog.open(ctx.init.runsDir, `${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}`)
+  const mac = await visibleMac(ctx)
+  mac.pace = watch
   try {
     const result = await runTask({
       task,
       adapter: openAIAdapter(PHASE0_MODELS.openai, INSTRUCTIONS, apiKey),
-      mac: await visibleMac(ctx),
+      mac,
       focus: (pid) => readFocus(ctx.init.nativeHelperPath, pid).catch(() => 'unknown' as const),
       frontmost: () => readFrontmost(ctx.init.nativeHelperPath).catch(() => undefined),
       approve: async (approval): Promise<Answer> => {
@@ -63,9 +65,11 @@ async function agentRun(params: unknown, ctx: HandlerContext) {
       log,
       signal: ctx.signal,
       emit: ctx.emit,
+      front: watch,
     })
     return { ...result, log: log.path }
   } finally {
+    mac.pace = false
     log.close()
   }
 }

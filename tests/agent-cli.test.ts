@@ -3,11 +3,11 @@ import assert from 'node:assert/strict'
 import { parseAgentArgs, answerOf, avoidBundles } from '../scripts/agent-args'
 
 test('the task and the flags become run options with the default budget filled in', () => {
-  assert.deepEqual(parseAgentArgs(['Type hello', '--max-actions', '10', '--budget', '0.5', '--front', '--exclude', 'Slack', '--exclude', 'com.apple.mail']), {
+  assert.deepEqual(parseAgentArgs(['Type hello', '--max-actions', '10', '--budget', '0.5', '--watch', '--exclude', 'Slack', '--exclude', 'com.apple.mail']), {
     task: 'Type hello',
     model: 'gpt-6-sol',
     budget: { maxActions: 10, maxMs: 360_000, maxUsd: 0.5 },
-    front: true,
+    watch: true,
     excluded: ['Slack', 'com.apple.mail'],
   })
   assert.deepEqual(parseAgentArgs(['Do', 'the', 'thing', '--minutes', '2']).task, 'Do the thing')

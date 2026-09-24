@@ -34,7 +34,10 @@ export type RunDeps = {
   excluded?: string[]
   /** Bundle ids never picked as the first target (the terminal running the CLI, for one). */
   avoid?: string[]
-  /** Bring each new target to the front, to watch the run. Off by default: JevAuto works in the background. */
+  /**
+   * Watch mode: each new target comes to the front so you can see the cursor work. Choosing it is also your OK for
+   * shortcuts and foreground-only clicks, and the target stays in front afterwards. Off by default (background).
+   */
   front?: boolean
   emit?: (name: string, data: unknown) => void
   now?: () => number
@@ -130,7 +133,10 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
 
   async function retarget(w: Target) {
     target = { pid: w.pid, windowId: w.windowId, app: w.app, title: w.title, bundleId: w.bundleId }
-    if (d.front) await d.mac.call('bring_to_front', { pid: w.pid, window_id: w.windowId }, signal)
+    if (d.front) {
+      await d.mac.call('bring_to_front', { pid: w.pid, window_id: w.windowId }, signal)
+      front = { windowId: w.windowId } // already in front for shortcuts, with nothing to give back
+    }
     await refreshSnap()
     d.log.write('target', { ...target })
   }
@@ -162,7 +168,7 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
   /** Brings the target forward (once per turn) and sends the plan as real key presses (spec §4, after your OK). */
   async function inFront(t: Target, plan: Plan): Promise<ExecResult> {
     if (front?.windowId !== t.windowId) {
-      const before = front?.restorePid ?? (await d.frontmost?.().catch(() => undefined))?.pid
+      const before = d.front ? undefined : (front?.restorePid ?? (await d.frontmost?.().catch(() => undefined))?.pid)
       await d.mac.call('bring_to_front', { pid: t.pid, window_id: t.windowId }, signal)
       front = { windowId: t.windowId, restorePid: before !== undefined && before !== t.pid ? before : undefined }
       await new Promise((resolve) => setTimeout(resolve, 300))
@@ -170,8 +176,9 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
     return runPlan(inForeground(plan), d.mac, signal)
   }
 
-  /** Gives the front back to the app you were using, once the turn is over. */
+  /** Gives the front back to the app you were using, once the turn is over. In Watch mode the target keeps it. */
   async function restoreFront() {
+    if (d.front) return
     const pid = front?.restorePid
     front = undefined
     if (pid === undefined) return
@@ -322,7 +329,7 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
     // Modifier clicks and some drags are refused in the background (spec §4: "foreground, with your OK").
     const pointerRefused = POINTER.has(a.kind) && result !== undefined && !result.ok && result.code === 'background_unavailable'
     if (((a.kind === 'keys' || a.kind === 'type') && undelivered) || pointerRefused) {
-      let allowed = foreground.has(t.pid)
+      let allowed = d.front === true || foreground.has(t.pid)
       if (!allowed) {
         const answer = await approval({
           kind: 'foreground',

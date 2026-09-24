@@ -92,3 +92,42 @@ test('keys are narrated without a point; reads pass through silently; failures a
   assert.deepEqual(events[0].data, { id: 'a1', verb: 'key', label: 'return', app: 'Calculator', visible: false })
   assert.equal(events[1].data.ok, false)
 })
+
+test('clicks carry their count, button and held keys; typing its text; scrolling its direction', async () => {
+  const { v, events } = visible()
+  await v.call('get_window_state', { pid: 3, window_id: 7 })
+  await v.call('click', { pid: 3, window_id: 7, x: 200, y: 100, count: 2, button: 'right', modifier: ['shift'] })
+  await v.call('type_text', { pid: 3, window_id: 7, element_index: 4, snapshot_id: 's00000001', text: 'Hello there' })
+  await v.call('scroll', { pid: 3, window_id: 7, x: 200, y: 100, direction: 'down', amount: 3 })
+  const acts = events.filter((e) => e.name === 'ui.act').map((e) => e.data)
+  assert.deepEqual([acts[0].count, acts[0].button, acts[0].held], [2, 'right', ['shift']])
+  assert.equal(acts[1].text, 'Hello there')
+  assert.equal(acts[2].direction, 'down')
+})
+
+test('in Watch mode each visible action waits for the cursor to arrive, so the click lands as the cursor presses', async () => {
+  const { v } = visible()
+  await v.call('get_window_state', { pid: 3, window_id: 7 })
+  const t0 = performance.now()
+  await v.call('click', { pid: 3, window_id: 7, element_index: 4, snapshot_id: 's00000001' })
+  const unpaced = performance.now() - t0
+  v.pace = true
+  const t1 = performance.now()
+  await v.call('click', { pid: 3, window_id: 7, element_index: 4, snapshot_id: 's00000001' })
+  const paced = performance.now() - t1
+  assert.ok(unpaced < 60, `background mode never waits (${unpaced} ms)`)
+  // Same point twice: no travel, only the dwell before the press.
+  assert.ok(paced >= 70 && paced < 400, `paced ${paced} ms`)
+})
+
+test('a paced wait ends at once on Stop', async () => {
+  const { v } = visible()
+  v.pace = true
+  await v.call('get_window_state', { pid: 3, window_id: 7 })
+  const controller = new AbortController()
+  const t0 = performance.now()
+  const pending = v.call('click', { pid: 3, window_id: 7, x: 790, y: 590 }, controller.signal)
+  setTimeout(() => controller.abort(), 20)
+  await assert.rejects(pending)
+  assert.ok(performance.now() - t0 < 200)
+})

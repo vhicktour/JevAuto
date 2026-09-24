@@ -354,6 +354,37 @@ body.surface-activity.has-glass {
   font-size: 12px;
   color: rgba(234, 247, 255, 0.42);
 }
+.watch-toggle {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  padding: 6px 10px 6px 8px;
+  border-radius: 999px;
+  font: 600 12px/1 var(--font-body);
+  color: var(--text-dim);
+  background: rgba(234, 247, 255, 0.06);
+  box-shadow: inset 0 0 0 1px var(--line);
+  transition:
+    background 160ms var(--ease-out),
+    color 160ms var(--ease-out);
+}
+.watch-toggle i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(234, 247, 255, 0.35);
+}
+.watch-toggle.is-on {
+  color: var(--color-cyan);
+  background: rgba(142, 231, 245, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(142, 231, 245, 0.35);
+}
+.watch-toggle.is-on i {
+  background: var(--color-cyan);
+  box-shadow: 0 0 8px var(--cyan-glow);
+}
 .card--attention {
   display: flex;
   flex-direction: column;
@@ -591,6 +622,70 @@ body.surface-probe-overlay {
   }
 }
 
+.agent-cursor.is-holding .agent-cursor-press {
+  transform: scale(0.86, 0.82); /* the button is held down for the whole drag */
+  transition: transform 120ms var(--ease-out);
+}
+.cursor-chip kbd {
+  display: inline-block;
+  min-width: 18px;
+  margin: -2px 2px;
+  padding: 3px 5px;
+  border-radius: 6px;
+  text-align: center;
+  font: 600 12px/1 var(--font-body);
+  color: var(--color-pearl);
+  background: rgba(234, 247, 255, 0.12);
+  box-shadow:
+    inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(234, 247, 255, 0.14);
+}
+.cursor-chip-verb {
+  margin-right: 6px;
+  color: var(--text-dim);
+}
+.cursor-chip-typed {
+  font-weight: 600;
+}
+.cursor-chip-caret {
+  display: inline-block;
+  width: 1.5px;
+  height: 13px;
+  margin-left: 1px;
+  vertical-align: -2px;
+  background: var(--color-cyan);
+  animation: caret 900ms steps(1) infinite;
+}
+@keyframes caret {
+  50% {
+    opacity: 0;
+  }
+}
+.cursor-chip-scroll {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 8px;
+  border-right: 2px solid var(--color-cyan);
+  border-bottom: 2px solid var(--color-cyan);
+  transform: rotate(45deg);
+  animation: scroll-bob 700ms var(--ease-out) infinite;
+}
+.cursor-chip-scroll--up {
+  transform: rotate(-135deg);
+}
+.cursor-chip-scroll--left {
+  transform: rotate(135deg);
+}
+.cursor-chip-scroll--right {
+  transform: rotate(-45deg);
+}
+@keyframes scroll-bob {
+  50% {
+    translate: 0 2px;
+  }
+}
+
 /* ---------------------------------------------------------------- island */
 
 .island-stage {
@@ -802,7 +897,9 @@ body.surface-probe-overlay {
   .island-avatar::after,
   .state-pill i,
   .is-running .timeline-state,
-  .timeline-row {
+  .timeline-row,
+  .cursor-chip-caret,
+  .cursor-chip-scroll {
     animation: none !important;
   }
 }

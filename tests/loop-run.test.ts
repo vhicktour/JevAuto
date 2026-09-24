@@ -306,6 +306,18 @@ test('a click or drag Cua cannot do in the background is retried in front with y
   )
 })
 
+test('in Watch mode the target comes to the front and shortcuts need no extra OK', async () => {
+  const world = new World()
+  world.windows.push({ window_id: 99, pid: 1, app_name: 'Terminal', title: 'zsh', bounds: { x: 0, y: 0, width: 800, height: 600 }, z_index: 3, colour: 70 })
+  world.apps.push({ pid: 1, bundle_id: 'com.apple.Terminal', name: 'Terminal', running: true })
+  const script = new Script([{ actions: [{ kind: 'keys', callId: 'c1', keys: ['CMD', 'B'] }] }, { actions: [done('f1')] }])
+  const { d, approvals } = deps(world, script, { front: true, frontmost: async () => ({ pid: 1 }), avoid: ['com.apple.Terminal'] })
+  await runTask(d)
+  assert.equal(approvals.length, 0)
+  assert.deepEqual(world.calls.filter((c) => c.name === 'bring_to_front').map((c) => c.args.pid), [42])
+  assert.ok(world.calls.some((c) => c.name === 'hotkey' && c.args.delivery_mode === 'foreground'))
+})
+
 test('switching the target mid-turn halts the pointer actions that were aimed at the old window', async () => {
   const world = new World()
   world.windows.push({ window_id: 8, pid: 43, app_name: 'Notes', title: 'Groceries', bounds: { x: 0, y: 0, width: 300, height: 300 }, z_index: 5, colour: 50 })

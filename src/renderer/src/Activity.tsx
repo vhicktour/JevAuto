@@ -20,10 +20,12 @@ export function Activity() {
   const [task, setTask] = useState('')
   const [approval, setApproval] = useState<UiApproval | null>(null)
   const [question, setQuestion] = useState<UiQuestion | null>(null)
+  const [watch, setWatch] = useState(true)
   const list = useRef<HTMLOListElement>(null)
 
   useEffect(() => {
     void command<string[]>({ type: 'status' }).then(setLog)
+    void command<{ watch: boolean }>({ type: 'settings' }).then((s) => setWatch(s.watch))
     return onUiEvent((e) => {
       if (e.type === 'status-line') setLog((l) => [...l.slice(-199), e.line])
       else if (e.type === 'permissions') setAccess({ accessibility: e.accessibility, screenRecording: e.screenRecording })
@@ -41,6 +43,7 @@ export function Activity() {
       else if (e.type === 'approval-closed') setApproval((a) => (a?.id === e.id ? null : a))
       else if (e.type === 'question') setQuestion(e.question)
       else if (e.type === 'question-closed') setQuestion((q) => (q?.id === e.id ? null : q))
+      else if (e.type === 'settings') setWatch(e.watch)
     })
   }, [])
   useEffect(() => {
@@ -89,7 +92,17 @@ export function Activity() {
           disabled={busy}
         />
         <div className="composer-row">
-          <span className="composer-hint">Return runs it · ⌃⌥Space opens this from anywhere</span>
+          <button
+            type="button"
+            className={`watch-toggle${watch ? ' is-on' : ''}`}
+            aria-pressed={watch}
+            title={watch ? 'Watch: each app comes to the front so you can see the cursor work' : 'Background: JevAuto works behind your windows'}
+            onClick={() => void command({ type: 'watch', on: !watch })}
+          >
+            <i />
+            {watch ? 'Watch' : 'Background'}
+          </button>
+          <span className="composer-hint">Return runs it · ⌃⌥Space from anywhere</span>
           {busy ? (
             <button type="button" className="button button--stop" onClick={() => void command({ type: 'stop' })}>
               Stop

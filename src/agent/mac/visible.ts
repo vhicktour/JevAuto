@@ -1,6 +1,7 @@
 import { windowsOf, windowStateOf, type ElementInfo, type WindowInfo } from './results'
 import type { CuaResult } from './cua'
 import type { UiAct } from '../../shared/ui-events'
+import { CURSOR, planTravel } from '../../shared/motion'
 
 type Point = { x: number; y: number }
 type Rect = Point & { width: number; height: number }
@@ -25,6 +26,13 @@ const VERBS: Record<string, UiAct['verb']> = {
   scroll: 'scroll',
 }
 
+const pause = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) return reject(signal.reason)
+    const timer = setTimeout(resolve, ms)
+    signal?.addEventListener('abort', () => (clearTimeout(timer), reject(signal.reason)), { once: true })
+  })
+
 const inside = (p: Point, r: Rect) => p.x >= r.x && p.y >= r.y && p.x < r.x + r.width && p.y < r.y + r.height
 const centre = (r: Rect): Point => ({ x: r.x + r.width / 2, y: r.y + r.height / 2 })
 const short = (s: string, n = 40) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
@@ -47,6 +55,12 @@ type WindowGeometry = { app?: string; bounds?: Rect; screenshotWidth?: number }
 
 /** Wraps the driver so every action announces where it lands before it runs, and whether it worked after. */
 export class VisibleMac implements Mac {
+  /**
+   * Watch mode: before each action you can see, wait while the cursor travels there (the same motion the overlay
+   * draws), so the app reacts exactly as the cursor presses instead of ahead of it.
+   */
+  pace = false
+  private cursorAt?: Point
   private snapshots = new Map<string, Map<number, ElementInfo>>()
   private windows = new Map<number, WindowGeometry>()
   private desktopScale?: number
@@ -68,6 +82,11 @@ export class VisibleMac implements Mac {
     this.emit('ui.act', act)
     const started = performance.now()
     try {
+      if (act.point && act.visible) {
+        // The first trip starts from the island, which only the overlay can place: allow the longest travel.
+        if (this.pace) await pause((this.cursorAt ? planTravel(this.cursorAt, act.point).durationMs : CURSOR.maxTravelMs) + CURSOR.dwellMs, signal)
+        this.cursorAt = act.to ?? act.point
+      } else if (verb !== 'key') this.cursorAt = undefined // the overlay hides; its next trip starts from the island again
       const result = await this.mac.call(name, args, signal)
       this.emit('ui.done', { id: act.id, ok: !result.isError, ms: Math.round(performance.now() - started) })
       return result
@@ -133,6 +152,7 @@ export class VisibleMac implements Mac {
       visible = isPointVisible(point, windowId, windowsOf(listed.structured))
     } else if (point) visible = true // a desktop-scope click is a real cursor click on screen
     const app = windowId !== undefined ? this.windows.get(windowId)?.app : undefined
+    const held = Array.isArray(args.modifier) ? args.modifier.filter((m): m is string => typeof m === 'string') : []
     return {
       id: this.newId(),
       verb,
@@ -142,6 +162,12 @@ export class VisibleMac implements Mac {
       ...(point ? { point } : {}),
       ...(to ? { to } : {}),
       visible,
+      // What the cursor needs to act the gesture out (spec §9): double or right clicks, held keys, the typed text.
+      ...(typeof args.count === 'number' && args.count > 1 ? { count: Math.min(3, args.count) } : {}),
+      ...(args.button === 'right' || args.button === 'middle' ? { button: args.button } : {}),
+      ...(held.length ? { held } : {}),
+      ...(verb === 'type' && typeof args.text === 'string' ? { text: args.text.slice(0, 200) } : {}),
+      ...(verb === 'scroll' && ['up', 'down', 'left', 'right'].includes(String(args.direction)) ? { direction: args.direction as 'up' | 'down' | 'left' | 'right' } : {}),
     }
   }
 }

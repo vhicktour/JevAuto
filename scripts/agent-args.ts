@@ -3,7 +3,7 @@ import { DEFAULT_BUDGET, type Budget } from '../src/agent/loop/budget'
 import type { Answer } from '../src/agent/loop/run'
 import { PHASE0_MODELS } from '../src/shared/constants'
 
-export type AgentArgs = { task: string; model: string; budget: Budget; front: boolean; excluded: string[] }
+export type AgentArgs = { task: string; model: string; budget: Budget; watch: boolean; excluded: string[] }
 
 function positive(flag: string, value: string | undefined, integer: boolean): number | undefined {
   if (value === undefined) return undefined
@@ -21,7 +21,7 @@ export function parseAgentArgs(argv: string[]): AgentArgs {
       'max-actions': { type: 'string' },
       minutes: { type: 'string' },
       budget: { type: 'string' },
-      front: { type: 'boolean', default: false },
+      watch: { type: 'boolean', default: false },
       exclude: { type: 'string', multiple: true },
     },
   })
@@ -36,7 +36,7 @@ export function parseAgentArgs(argv: string[]): AgentArgs {
       maxMs: minutes === undefined ? DEFAULT_BUDGET.maxMs : Math.round(minutes * 60_000),
       maxUsd: positive('budget', values.budget, false) ?? DEFAULT_BUDGET.maxUsd,
     },
-    front: values.front ?? false,
+    watch: values.watch ?? false,
     excluded: values.exclude ?? [],
   }
 }

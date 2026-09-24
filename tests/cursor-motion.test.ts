@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fc from 'fast-check'
-import { CURSOR, planTravel, travelAt } from '../src/renderer/src/cursor/motion'
+import { CURSOR, planDrag, planTravel, travelAt } from '../src/renderer/src/cursor/motion'
 
 const point = fc.record({ x: fc.integer({ min: -1920, max: 3976 }), y: fc.integer({ min: 0, max: 1329 }) })
 const xy = (p: { x: number; y: number }) => ({ x: p.x, y: p.y })
@@ -47,4 +47,10 @@ test('heading points along the path, towards the target', () => {
   const tr = planTravel({ x: 0, y: 0 }, { x: 400, y: 0 })
   const h = travelAt(tr, tr.durationMs / 2).heading
   assert.ok(Math.cos(h) > 0.9, `heading ${h}`)
+})
+
+test('a drag is a straight line at the pace of the drag, not an arc', () => {
+  const d = planDrag({ x: 10, y: 20 }, { x: 210, y: 120 }, 500)
+  assert.equal(d.durationMs, 500)
+  assert.deepEqual(d.control, { x: 110, y: 70 })
 })

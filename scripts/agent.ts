@@ -95,7 +95,7 @@ const result = await runTask({
   budget: args.budget,
   excluded: args.excluded,
   avoid: avoidBundles(process.env),
-  front: args.front,
+  front: args.watch,
   emit,
 })
 log.close()
