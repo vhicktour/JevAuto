@@ -77,10 +77,9 @@ async function textAreaValue(mac: Mac, pid: number, windowId: number): Promise<s
   return typeof area?.value === 'string' ? area.value : ''
 }
 
-/** The title of the tab showing `path` on the fixture site, read straight from the browser. */
-async function tabTitle(c: Ctx, path: string): Promise<string | undefined> {
-  const tab = (await c.web.windows()).find((w) => w.url.startsWith(`${c.site}${path}`))
-  return tab?.title
+/** Whether some tab of JevAuto's browser shows this title (each run's text is unique, so older tabs can't match). */
+async function tabShows(c: Ctx, title: string): Promise<boolean> {
+  return (await c.web.windows()).some((w) => w.title === title)
 }
 
 async function makePdf(file: string, pages: { heading: string; body: string }[]) {
@@ -208,20 +207,14 @@ export const TASKS: DesktopTask[] = [
     web: true,
     setup: async (c) => ({ site: c.site, name: `Ada ${c.stamp}` }),
     prompt: (d) => `Open the page ${d.site}/form, type ${d.name} into the Name field, then press the Save button.`,
-    check: async (c, d) => {
-      const title = await tabTitle(c, '/form')
-      return { pass: title === `saved ${d.name}`, detail: { title } }
-    },
+    check: async (c, d) => ({ pass: await tabShows(c, `saved ${d.name}`) }),
   },
   {
     id: 'web-search',
     web: true,
     setup: async (c) => ({ site: c.site, query: `lanterns ${c.stamp}` }),
     prompt: (d) => `Open the page ${d.site}/search and search for "${d.query}".`,
-    check: async (c, d) => {
-      const title = await tabTitle(c, '/results')
-      return { pass: title === `Results for ${d.query}`, detail: { title } }
-    },
+    check: async (c, d) => ({ pass: await tabShows(c, `Results for ${d.query}`) }),
   },
   {
     id: 'web-to-textedit',

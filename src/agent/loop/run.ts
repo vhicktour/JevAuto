@@ -51,6 +51,13 @@ export type RunDeps = {
   allowPrivateUrls?: boolean
 }
 
+const near = (a: number, b: number) => Math.abs(a - b) <= 2
+/** Whether AX places keyboard focus inside the window whose bounds are `w` (screen points). */
+function focusInWindow(focus: Focus | 'unknown' | undefined, w: { x: number; y: number; width: number; height: number }): boolean {
+  const f = focus !== undefined && focus !== 'unknown' && focus.ok ? focus.windowFrame : undefined
+  return !!f && near(f.x, w.x) && near(f.y, w.y) && near(f.width, w.width) && near(f.height, w.height)
+}
+
 /** A web tab in JevAuto's browser: CDP delivers its keys and clicks in the background, so it never needs the front. */
 const onWeb = (t: Target) => t.bundleId === WEB_BUNDLE || t.pid === WEB_PID
 
@@ -328,6 +335,11 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
     const verdict = gate({ action: a, target: t, element, focus, safety, excluded: d.excluded })
     d.log.write('gate', { action: desc, ...verdict })
     if (verdict.decision === 'refuse') return { halt: `${desc} was refused: ${verdict.reason}` }
+    // Text for a Mac app goes into an element of the target window, or to the app's focus when AX shows that focus is
+    // inside the target window. Anything else could land in another of the app's windows (seen live: Cua accepted an
+    // AX insert into a different TextEdit document), so nothing is typed.
+    if (a.kind === 'type' && !onWeb(t) && !element && !focusInWindow(focus, obs.bounds))
+      return { halt: `the text cursor is not in this ${t.app} window, so nothing was typed; click the field you want first` }
     let acknowledged: unknown[] | undefined
     if (verdict.decision === 'ask') {
       const answer = await approval({ kind: 'action', title: `${desc[0].toUpperCase()}${desc.slice(1)} in ${t.app}`, reason: verdict.reason, app: t.app })

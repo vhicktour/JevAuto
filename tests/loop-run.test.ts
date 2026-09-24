@@ -231,6 +231,25 @@ test('typing goes to the focused element by index; a password field is refused',
   assert.match(secure.nexts[0].notes.join(' '), /password/)
 })
 
+test('typing never goes to another window: with focus elsewhere nothing is typed and the model is told to click first', async () => {
+  const world = new World()
+  const elsewhere: Focus = { ok: true, role: 'AXTextArea', frame: { x: 900, y: 500, width: 300, height: 200 }, windowFrame: { x: 880, y: 460, width: 400, height: 300 }, webArea: false, secure: false }
+  const script = new Script([{ actions: [{ kind: 'type', callId: 'c1', text: '$310.03' }] }, { actions: [done('f1')] }])
+  await runTask(deps(world, script, { focus: async () => elsewhere }).d)
+  assert.equal(world.acted().length, 0)
+  assert.match(script.nexts[0].notes.join(' '), /click/i)
+})
+
+test('typing into a field Cua did not list still works when AX shows the focus inside the target window', async () => {
+  const world = new World()
+  const inside: Focus = { ok: true, role: 'AXTextField', frame: { x: 300, y: 300, width: 120, height: 20 }, windowFrame: { x: 100, y: 50, width: 640, height: 400 }, webArea: false, secure: false }
+  const script = new Script([{ actions: [{ kind: 'type', callId: 'c1', text: 'hello' }] }, { actions: [done('f1')] }])
+  await runTask(deps(world, script, { focus: async () => inside }).d)
+  const typed = world.calls.find((c) => c.name === 'type_text')!
+  assert.equal(typed.args.element_index, undefined)
+  assert.equal(typed.args.window_id, 7)
+})
+
 test('keys refused for another open window are retried in front only with your OK', async () => {
   const world = new World()
   world.failures.set('press_key', fail('same_pid_keyboard_ambiguity'))
