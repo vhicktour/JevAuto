@@ -9,3 +9,7 @@ evidence/
 .DS_Store
 # Local secret notes; never commit
 Jev.txt
+# Local agent workspaces and notes (probe scripts, screen captures, memory); never publish
+.superpowers/
+.remember/
+.claude/
