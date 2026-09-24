@@ -10,8 +10,13 @@ type Failure = { status?: number; code?: unknown; type?: unknown; name?: string;
 const fields = (e: unknown): Failure => (e && typeof e === 'object' ? (e as Failure) : { message: String(e) })
 const said = (f: Failure, word: string) => [f.code, f.type, f.error?.code, f.error?.type].some((v) => typeof v === 'string' && v.includes(word))
 
-/** A 429 can mean "slow down" or "no money left"; only the second one is fixed by the user, not by waiting. */
-const outOfCredit = (f: Failure) => f.status === 429 && (said(f, 'insufficient_quota') || said(f, 'credit_balance') || said(f, 'billing'))
+/**
+ * No money left, which only the user can fix: OpenAI sends it as a 429 (insufficient_quota), Anthropic as a 400
+ * ("Your credit balance is too low").
+ */
+const outOfCredit = (f: Failure) =>
+  (f.status === 429 && (said(f, 'insufficient_quota') || said(f, 'credit_balance') || said(f, 'billing'))) ||
+  (f.status === 400 && /credit balance is too low/i.test(f.message ?? ''))
 
 /** One plain sentence about what went wrong with the model provider and what fixes it. */
 export function explainError(provider: Provider, error: unknown): string {

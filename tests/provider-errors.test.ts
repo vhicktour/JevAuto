@@ -31,3 +31,9 @@ test('an Anthropic organisation key without its workspace says which setting is 
   const e = Object.assign(new Error('400 {"error":{"message":"This API key is not scoped to a workspace, so this request must include the anthropic-workspace-id header"}}'), { status: 400 })
   assert.match(explainError('anthropic', e), /ANTHROPIC_WORKSPACE_ID/)
 })
+
+test('Anthropic reports an empty balance as a 400; it still reads as out of credits and is not retried', () => {
+  const e = Object.assign(new Error('400 {"error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API."}}'), { status: 400 })
+  assert.match(explainError('anthropic', e), /out of credits.*console\.anthropic\.com/)
+  assert.equal(shouldRetry(e), false)
+})
