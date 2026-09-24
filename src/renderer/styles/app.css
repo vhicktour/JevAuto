@@ -1,0 +1,6 @@
+@import 'tailwindcss';
+@import './tokens.css';
+
+html, body, #root { margin: 0; height: 100%; }
+body { background: transparent; font-family: var(--font-body); color: var(--color-pearl); }
+body.harness { background: var(--color-ink); }

@@ -1,0 +1,11 @@
+node_modules/
+out/
+dist/
+native/build/
+resources/cua-sdk/
+evidence/
+.env.local
+*.log
+.DS_Store
+# Local secret notes; never commit
+Jev.txt
