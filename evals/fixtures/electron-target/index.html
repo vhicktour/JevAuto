@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>JevAuto Target | clicks=0 | buttons=0 | text=0</title>
+    <style>
+      body { font: 16px -apple-system; margin: 24px; background: #f4f6f8; }
+      button { font-size: 18px; padding: 12px 24px; }
+      #pad { width: 400px; height: 200px; background: #dfe7ee; margin-top: 16px; }
+    </style>
+  </head>
+  <body>
+    <button id="add" aria-label="Add one">Add one</button>
+    <p><label>Notes <textarea id="notes" aria-label="Notes" rows="4" cols="40"></textarea></label></p>
+    <div id="pad" role="button" aria-label="Drag pad"></div>
+    <script>
+      let clicks = 0
+      let buttons = 0
+      const notes = document.getElementById('notes')
+      const render = () => { document.title = `JevAuto Target | clicks=${clicks} | buttons=${buttons} | text=${notes.value.length}` }
+      document.getElementById('add').addEventListener('click', () => { clicks++; render() })
+      notes.addEventListener('input', render)
+      document.getElementById('pad').addEventListener('pointerdown', (e) => { buttons = e.buttons; render() })
+      window.addEventListener('pointerup', (e) => { buttons = e.buttons; render() })
+      window.addEventListener('pointermove', (e) => { if (buttons !== e.buttons) { buttons = e.buttons; render() } })
+    </script>
+  </body>
+</html>

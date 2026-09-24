@@ -45,5 +45,10 @@ export async function runSkeleton(deps: SpikeDeps): Promise<boolean> {
 export async function runSpike(name: SpikeName, deps: SpikeDeps): Promise<void> {
   const granted = await runSkeleton(deps)
   if (name === 'skeleton' || !granted) return
-  // Tasks 7 and 8 add 'a' and 'b' here.
+  if (name === 'a') {
+    const only = argValue(deps.argv, 'only') === 'offspace' ? 'offspace' : 'all'
+    deps.emit(`Spike A (${only}) running; keep your hands off the fixture window.`)
+    const result = await deps.supervisor.request<{ file: string; summary: unknown }>('spike.a', { only }, { timeoutMs: 15 * 60_000 })
+    deps.emit(`spike A report: ${result.file} ${JSON.stringify(result.summary)}`)
+  }
 }

@@ -2,6 +2,7 @@ import { z } from 'zod'
 import type { Handler } from './agent'
 import type { AgentMethod } from '../shared/protocol'
 import { loadStagedCua, MacDriver } from './mac/cua'
+import { runSpikeA, SpikeAParams } from './spikes/spike-a'
 
 let mac: MacDriver | undefined
 export async function macDriver(init: { cuaSdkPath: string; cuaLibraryPath: string }): Promise<MacDriver> {
@@ -13,6 +14,7 @@ const CuaCall = z.object({ name: z.string().min(1), args: z.record(z.string(), z
 
 export const handlers: Partial<Record<AgentMethod, Handler>> = {
   ping: async () => ({ pong: true, pid: process.pid }),
+  'spike.a': async (params, ctx) => runSpikeA(await macDriver(ctx.init), ctx.init, SpikeAParams.parse(params ?? {}), ctx.signal),
   'permissions.check': async (_params, ctx) => {
     const mac = await macDriver(ctx.init)
     const permissions = await mac.call('check_permissions', { prompt: false })

@@ -28,3 +28,17 @@ test('windowStateOf and findElement pick the text area by role', () => {
 test('jsonSafe turns bigint window ids into strings', () => {
   assert.deepEqual(jsonSafe({ id: 12n, nested: [1n] }), { id: '12', nested: ['1'] })
 })
+
+test("windowStateOf reads Cua 0.28's {x, y, w, h} frames and keeps every parseable element", () => {
+  const state = windowStateOf({
+    snapshot_id: 's00000002',
+    elements: [
+      { actions: ['AXPress', 'AXShowMenu'], depth: 2, element_index: 2, element_token: 's00000002:2', enabled: true, frame: { h: 49, w: 120, x: 602, y: 401 }, in_web_content: true, label: 'Add one', parent_index: 1, role: 'AXButton', selected: false },
+      { role: 'AXGroup', label: 'no index, so not actionable' },
+      { actions: ['AXPress'], depth: 2, element_index: 4, frame: { h: 68, w: 344, x: 643, y: 466 }, label: 'Notes', role: 'AXTextArea' },
+    ],
+  })
+  assert.equal(state.elements.length, 2)
+  assert.deepEqual(findElement(state.elements, 'AXButton', 'Add one')?.frame, { x: 602, y: 401, width: 120, height: 49 })
+  assert.equal(findElement(state.elements, 'AXTextArea', 'Notes')?.element_index, 4)
+})

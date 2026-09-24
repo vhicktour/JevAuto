@@ -1,6 +1,10 @@
 import { z } from 'zod'
 
 const Bounds = z.object({ x: z.number(), y: z.number(), width: z.number(), height: z.number() })
+/** Cua 0.28 reports element frames as `{ x, y, w, h }` in screen points; callers get `Bounds`. */
+const ElementFrame = z
+  .object({ x: z.number(), y: z.number(), w: z.number(), h: z.number() })
+  .transform(({ x, y, w, h }) => ({ x, y, width: w, height: h }))
 export const WindowInfo = z
   .object({
     window_id: z.number(),
@@ -21,7 +25,7 @@ export const ElementInfo = z
     label: z.string().nullable().optional(),
     value: z.unknown().optional(),
     actions: z.array(z.string()).optional(),
-    frame: Bounds.optional(),
+    frame: ElementFrame.optional(),
   })
   .passthrough()
 export type ElementInfo = z.infer<typeof ElementInfo>
@@ -31,9 +35,15 @@ export function windowsOf(structured: unknown): WindowInfo[] {
   return parsed.success ? parsed.data.windows : []
 }
 
+/** One element Cua can't describe (no index, odd frame) is skipped instead of hiding the whole tree. */
 export function windowStateOf(structured: unknown): { snapshotId?: string; elements: ElementInfo[] } {
-  const parsed = z.object({ snapshot_id: z.string().optional(), elements: z.array(ElementInfo) }).passthrough().safeParse(structured)
-  return parsed.success ? { snapshotId: parsed.data.snapshot_id, elements: parsed.data.elements } : { elements: [] }
+  const parsed = z.object({ snapshot_id: z.string().optional(), elements: z.array(z.unknown()) }).passthrough().safeParse(structured)
+  if (!parsed.success) return { elements: [] }
+  const elements = parsed.data.elements.flatMap((e) => {
+    const element = ElementInfo.safeParse(e)
+    return element.success ? [element.data] : []
+  })
+  return { snapshotId: parsed.data.snapshot_id, elements }
 }
 
 export function findElement(elements: ElementInfo[], role: string, labelIncludes?: string): ElementInfo | undefined {
