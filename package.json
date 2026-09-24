@@ -8,7 +8,9 @@
   "author": "Victor Udeh",
   "license": "UNLICENSED",
   "packageManager": "pnpm@11.27.1",
-  "engines": { "node": ">=24" },
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "postinstall": "node scripts/install-electron.mjs",
     "tokens": "node scripts/tokens.mjs",
@@ -28,8 +30,11 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.128.0",
+    "@fontsource/sora": "5.3.0",
     "@google/genai": "2.24.0",
     "@typesafe-ai/sdk": "0.6.0",
+    "electron-liquid-glass": "1.1.1",
+    "motion": "13.2.0",
     "openai": "7.23.0",
     "playwright-core": "1.63.0",
     "react": "19.3.0",

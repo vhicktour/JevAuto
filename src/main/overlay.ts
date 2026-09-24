@@ -1,10 +1,11 @@
 import { BrowserWindow } from 'electron'
 import { islandRect, overlayRect, type NativeDisplay } from '../shared/native'
 
-type Loader = (window: BrowserWindow, surface: 'overlay' | 'island') => void
+type Loader = (window: BrowserWindow, query: Record<string, string>) => void
+type Probe = 'probe-overlay' | 'probe-island'
 const ISLAND = { width: 360, height: 44 }
 
-function panel(bounds: { x: number; y: number; width: number; height: number }, preload: string, surface: 'overlay' | 'island', load: Loader) {
+function panel(bounds: { x: number; y: number; width: number; height: number }, preload: string, surface: Probe, load: Loader) {
   const window = new BrowserWindow({
     ...bounds,
     type: 'panel',
@@ -28,13 +29,13 @@ function panel(bounds: { x: number; y: number; width: number; height: number }, 
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   window.webContents.on('will-navigate', (event) => event.preventDefault())
   window.once('ready-to-show', () => window.showInactive())
-  load(window, surface)
+  load(window, { surface })
   return window
 }
 
 export function openOverlays(displays: NativeDisplay[], preload: string, load: Loader) {
-  const overlays = displays.map((d) => panel(overlayRect(d), preload, 'overlay', load))
+  const overlays = displays.map((d) => panel(overlayRect(d), preload, 'probe-overlay', load))
   const home = displays.find((d) => d.notch) ?? displays[0]
-  const island = panel(islandRect(home, ISLAND), preload, 'island', load)
+  const island = panel(islandRect(home, ISLAND), preload, 'probe-island', load)
   return { overlays, island, home }
 }

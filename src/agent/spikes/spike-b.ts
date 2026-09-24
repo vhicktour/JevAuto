@@ -1,6 +1,6 @@
 import sharp from 'sharp'
 import { z } from 'zod'
-import type { MacDriver } from '../mac/cua'
+import type { Mac } from '../mac/visible'
 import { windowsOf, windowStateOf, findElement, type WindowInfo } from '../mac/results'
 import { parseTargetTitle, targetTitle } from './spike-a'
 import type { Rect, Point } from '../frame/frame'
@@ -27,7 +27,7 @@ export const SpikeBParams = z.object({
 
 const onCurrentSpace = (w: WindowInfo | undefined) => (w as { on_current_space?: boolean | null } | undefined)?.on_current_space ?? null
 
-export async function spikeBCapture(mac: MacDriver, params: z.infer<typeof SpikeBParams>) {
+export async function spikeBCapture(mac: Mac, params: z.infer<typeof SpikeBParams>) {
   // Off-screen too: a full-screen fixture lives on its own Space.
   const fixture = async () =>
     windowsOf((await mac.call('list_windows', { on_screen_only: false })).structured).find((w) => (w.title ?? '').startsWith('JevAuto Target'))

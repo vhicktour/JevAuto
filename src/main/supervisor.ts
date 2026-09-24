@@ -32,6 +32,7 @@ export class Supervisor {
   private restarts: number[] = []
   private nextId = 1
   private stopping = false
+  private killed?: AgentChild
   private onShutdownComplete?: () => void
 
   constructor(
@@ -88,6 +89,13 @@ export class Supervisor {
     })
   }
 
+  /** Stop's backstop (spec §8): the in-process driver dies with the agent. A deliberate kill restarts at once and never counts as a crash. */
+  kill(): void {
+    if (!this.child) return
+    this.killed = this.child
+    this.child.kill()
+  }
+
   async stop(): Promise<void> {
     this.stopping = true
     const child = this.child
@@ -123,6 +131,11 @@ export class Supervisor {
     this.pending.clear()
     this.child = undefined
     if (this.stopping) return
+    if (this.killed === child) {
+      this.killed = undefined
+      void this.start().catch(() => {})
+      return
+    }
     const now = (this.options.now ?? Date.now)()
     this.restarts = this.restarts.filter((t) => now - t < this.options.windowMs)
     if (this.restarts.length >= this.options.maxRestarts) {

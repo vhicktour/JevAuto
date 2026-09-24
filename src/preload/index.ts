@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 const surfaceArg = process.argv.find((a) => a.startsWith('--jevauto-surface='))
 const api = {
-  surface: surfaceArg ? surfaceArg.split('=')[1] : 'harness',
+  surface: surfaceArg ? surfaceArg.split('=')[1] : 'activity',
   async command<T>(command: unknown): Promise<T> {
     const result = (await ipcRenderer.invoke('jevauto:command', command)) as
       | { ok: true; value: T }

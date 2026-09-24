@@ -13,7 +13,10 @@ export const WindowInfo = z
     title: z.string().optional(),
     bounds: Bounds.optional(),
     z_index: z.number().optional(),
+    /** 0 for normal windows; floating panels, menus and overlays sit above it. */
+    layer: z.number().optional(),
     is_on_screen: z.boolean().optional(),
+    on_current_space: z.boolean().nullable().optional(),
   })
   .passthrough()
 export type WindowInfo = z.infer<typeof WindowInfo>

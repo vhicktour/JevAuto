@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import sharp from 'sharp'
-import { parseTargetTitle, pngSize, localPixel, targetTitle, minimizeButton } from '../src/agent/spikes/spike-a'
+import { parseTargetTitle, pngSize, localPixel, targetTitle, minimizeButton, lastInputAt } from '../src/agent/spikes/spike-a'
 import { windowsOf, windowStateOf } from '../src/agent/mac/results'
 
 test('parseTargetTitle reads the fixture state', () => {
@@ -39,4 +39,10 @@ test('minimizeButton picks the middle traffic light, never close or zoom', () =>
   ] })
   assert.equal(minimizeButton(elements)?.element_index, 3)
   assert.equal(minimizeButton(elements.slice(0, 2)), undefined)
+})
+
+test('lastInputAt reads when the fixture last received a keystroke, if it says', () => {
+  assert.equal(lastInputAt('JevAuto Target | clicks=0 | buttons=0 | text=12 | last=1790123456789'), 1790123456789)
+  assert.equal(lastInputAt('JevAuto Target | clicks=0 | buttons=0 | text=0'), null)
+  assert.equal(parseTargetTitle('JevAuto Target | clicks=2 | buttons=0 | text=12 | last=1790123456789')?.text, 12)
 })

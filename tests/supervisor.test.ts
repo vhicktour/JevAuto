@@ -94,3 +94,22 @@ test('stop sends shutdown and resolves on shutdown-complete without killing', as
   assert.ok(child.sent.some((m) => m.type === 'shutdown'))
   assert.equal(killed, false)
 })
+
+test('kill stops the agent at once, rejects its requests and restarts it outside the crash budget', async () => {
+  const children: FakeChild[] = []
+  let gaveUp = ''
+  const supervisor = new Supervisor(() => { const c = new FakeChild(); children.push(c); return c }, init, {
+    ...options, maxRestarts: 1, onGiveUp: (reason) => { gaveUp = reason },
+  })
+  await supervisor.start()
+  const pending = supervisor.request('ping', {})
+  supervisor.kill()
+  await assert.rejects(pending, AgentExitedError)
+  for (let i = 0; i < 3; i++) {
+    await new Promise((r) => setTimeout(r, 20))
+    supervisor.kill()
+  }
+  await new Promise((r) => setTimeout(r, 20))
+  assert.equal(children.length, 5) // the first child plus four restarts, although maxRestarts is 1
+  assert.equal(gaveUp, '')
+})

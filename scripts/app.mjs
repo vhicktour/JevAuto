@@ -19,6 +19,8 @@ if (!args.includes('--no-build')) {
     'exec', 'electron-builder', '--mac', 'dir', '--arm64',
     '-c.appId=personal.jevauto.desktop.dev', '-c.productName=JevAuto Dev', '-c.extraMetadata.productName=JevAuto Dev',
     '-c.mac.type=development', `-c.mac.identity=${identity}`,
+    // Dev signatures need no secure timestamp; skipping it removes a network round trip that can fail (release keeps it).
+    '-c.mac.timestamp=none',
   ])
 }
 if (!existsSync(appPath)) {

@@ -3,7 +3,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { z } from 'zod'
-import type { MacDriver } from '../mac/cua'
+import type { Mac } from '../mac/visible'
 import { windowsOf, windowStateOf, findElement, type WindowInfo, type ElementInfo } from '../mac/results'
 import { readFrontmost, readMouse } from '../../shared/native'
 import { createReport, writeReport, percentile } from '../../shared/report'
@@ -28,6 +28,42 @@ export function localPixel(frame: Rect, bounds: Rect, pixelsPerPoint: number): P
   }
 }
 
+/** When the fixture last received a keystroke (epoch ms), or null if its title doesn't say. */
+export function lastInputAt(title: string | undefined): number | null {
+  const m = /\| last=(\d+)/.exec(title ?? '')
+  return m ? Number(m[1]) : null
+}
+
+/** A cold Electron window exposes only its chrome until AX has walked the page once (Cua #3782): wait for the page. */
+async function warmFixture(mac: Mac, target: WindowInfo) {
+  for (let i = 0; i < 12; i++) {
+    const r = await mac.call('get_window_state', { pid: target.pid, window_id: target.window_id, include_accessibility_tree: true, include_screenshot: false })
+    if (findElement(windowStateOf(r.structured).elements, 'AXButton', 'Add one')) return true
+    await sleep(500)
+  }
+  return false
+}
+
+/**
+ * Stop test (spec §8): start typing 500 characters into the fixture as keystrokes (~15 s) and return once it is under
+ * way, so main can press Stop and read from the fixture's title when input actually went quiet.
+ */
+export async function startLongType(mac: Mac): Promise<{ ok: boolean; error?: string }> {
+  const target = windowsOf((await mac.call('list_windows', { on_screen_only: false })).structured).find((w) => (w.title ?? '').startsWith('JevAuto Target'))
+  if (!target?.bounds) return { ok: false, error: 'Start `pnpm fixture:electron` first.' }
+  await warmFixture(mac, target)
+  const s = await mac.call('get_window_state', { pid: target.pid, window_id: target.window_id, include_accessibility_tree: true, include_screenshot: true })
+  const { snapshotId, elements } = windowStateOf(s.structured)
+  const notes = findElement(elements, 'AXTextArea', 'Notes')
+  const shot = s.images[0] ? pngSize(s.images[0].dataBase64) : null
+  if (!notes?.frame || !shot) return { ok: false, error: 'The fixture has no Notes field on screen.' }
+  await mac.call('set_value', { pid: target.pid, window_id: target.window_id, element_index: notes.element_index, snapshot_id: snapshotId, value: '' })
+  const p = localPixel(notes.frame, target.bounds, shot.width / target.bounds.width)
+  void mac.call('type_text', { pid: target.pid, window_id: target.window_id, x: p.x, y: p.y, text: 'x'.repeat(500), delay_ms: 30 }).catch(() => {})
+  await sleep(300)
+  return { ok: true }
+}
+
 /** Electron lists untitled offscreen windows before the real one, so find the fixture by its title. */
 export function targetTitle(windows: WindowInfo[]): string | undefined {
   return windows.find((w) => (w.title ?? '').startsWith('JevAuto Target'))?.title
@@ -47,7 +83,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const settle = () => sleep(400)
 type Trial = { category: string; ok: boolean; ms: number; effect: unknown }
 
-export async function runSpikeA(mac: MacDriver, init: AgentInit, params: z.infer<typeof SpikeAParams>, signal: AbortSignal) {
+export async function runSpikeA(mac: Mac, init: AgentInit, params: z.infer<typeof SpikeAParams>, signal: AbortSignal) {
   const report = createReport('a', params.only)
   const trials: Trial[] = []
   const latency: Record<string, number[]> = {}
@@ -81,8 +117,7 @@ export async function runSpikeA(mac: MacDriver, init: AgentInit, params: z.infer
     return { file: await writeReport(init.evidenceDir, report.finish()), summary: {} }
   }
 
-  // A cold Electron window exposes only its chrome until AX has walked the page once (Cua #3782).
-  for (let i = 0; i < 10 && !findElement((await state(target.pid, target.window_id)).elements, 'AXButton', 'Add one'); i++) await sleep(500)
+  await warmFixture(mac, target)
 
   if (params.only === 'offspace') {
     // An element click is the Electron action that works in the background (see the 'all' run), so the Space is the only variable.

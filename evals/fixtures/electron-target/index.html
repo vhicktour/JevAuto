@@ -16,10 +16,11 @@
     <script>
       let clicks = 0
       let buttons = 0
+      let last = 0 // epoch ms of the latest keystroke, so a Stop test can see when input went quiet
       const notes = document.getElementById('notes')
-      const render = () => { document.title = `JevAuto Target | clicks=${clicks} | buttons=${buttons} | text=${notes.value.length}` }
+      const render = () => { document.title = `JevAuto Target | clicks=${clicks} | buttons=${buttons} | text=${notes.value.length}${last ? ` | last=${last}` : ''}` }
       document.getElementById('add').addEventListener('click', () => { clicks++; render() })
-      notes.addEventListener('input', render)
+      notes.addEventListener('input', () => { last = Date.now(); render() })
       document.getElementById('pad').addEventListener('pointerdown', (e) => { buttons = e.buttons; render() })
       window.addEventListener('pointerup', (e) => { buttons = e.buttons; render() })
       window.addEventListener('pointermove', (e) => { if (buttons !== e.buttons) { buttons = e.buttons; render() } })
