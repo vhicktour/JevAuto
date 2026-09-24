@@ -3,6 +3,7 @@ import type { UiAct, UiApproval, UiDone, UiQuestion, UiStatus } from '../../shar
 import { CursorGlyph } from './cursor/CursorGlyph'
 import { narrate } from './island-view'
 import { command, onUiEvent } from './events'
+import { Settings } from './Settings'
 
 type Row = { act: UiAct; done?: UiDone }
 type Access = { accessibility: boolean; screenRecording: boolean }
@@ -23,6 +24,7 @@ export function Activity() {
   const [watch, setWatch] = useState(true)
   const [model, setModel] = useState('')
   const [models, setModels] = useState<{ id: string; label: string }[]>([])
+  const [showSettings, setShowSettings] = useState(false)
   const list = useRef<HTMLOListElement>(null)
 
   useEffect(() => {
@@ -76,8 +78,22 @@ export function Activity() {
           <i />
           {STATE_LABEL[status.state]}
         </span>
+        <button
+          type="button"
+          className={`gear${showSettings ? ' is-on' : ''}`}
+          aria-label={showSettings ? 'Close settings' : 'Settings'}
+          aria-pressed={showSettings}
+          onClick={() => {
+            setShowSettings((v) => !v)
+            if (showSettings) void command<{ models: { id: string; label: string }[] }>({ type: 'settings' }).then((s) => setModels(s.models))
+          }}
+        >
+          ⚙
+        </button>
       </header>
+      {showSettings && <Settings access={access} />}
 
+      {!showSettings && (<>
       <form
         className="composer"
         onSubmit={(e) => {
@@ -182,6 +198,7 @@ export function Activity() {
           {log.join('\n')}
         </pre>
       )}
+      </>)}
     </main>
   )
 }

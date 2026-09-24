@@ -1,4 +1,5 @@
-import { app, globalShortcut, ipcMain, screen, utilityProcess, type BrowserWindow } from 'electron'
+import { app, clipboard, globalShortcut, ipcMain, safeStorage, screen, shell, utilityProcess, type BrowserWindow } from 'electron'
+import { release } from 'node:os'
 import { existsSync, readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -10,6 +11,8 @@ import { PROTOCOL_VERSION, type AgentInit } from '../shared/protocol'
 import { UiAct, UiApproval, UiDone, UiQuestion, UiStatus, type UiEvent } from '../shared/ui-events'
 import { keysFromEnvFile } from './keys'
 import { MODELS, type ModelId } from '../shared/models'
+import { SettingsStore } from './settings'
+import { KEY_NAMES, KeyStore, type KeyName } from './secrets'
 import { readDisplays } from '../shared/native'
 
 const root = dirname(fileURLToPath(import.meta.url))
@@ -26,11 +29,36 @@ const sameDocument = (url: string | undefined) => {
   return u.href === rendererEntry()
 }
 let ui: UiCoordinator | undefined
-/** Watch mode, on by default: targets come to the front so you can see the cursor work. Off keeps JevAuto in the background. */
-let watch = true
-let model: ModelId = MODELS[0].id
+/** Watch mode (on by default), the model and your excluded apps, kept in settings.json. */
+let settings: SettingsStore | undefined
+/** Keys you saved in Settings, encrypted with your Keychain; they override .env.local. */
+let keys: KeyStore | undefined
 /** Only the models whose provider key JevAuto has. */
 const availableModels = () => MODELS.filter((m) => lastInit?.keys?.[m.key]).map((m) => ({ id: m.id, label: m.label }))
+
+function settingsView() {
+  const s = settings!.get()
+  const set = Object.fromEntries(KEY_NAMES.map((k) => [k, Boolean(lastInit?.keys?.[k])]))
+  return { watch: s.watch, model: s.model, models: availableModels(), excluded: s.excluded, keys: set }
+}
+
+/** New keys reach the agent in its next init: restart it (between runs only). */
+function applyKeys() {
+  if (!lastInit) return
+  lastInit.keys = { ...loadKeys(), ...keys!.all() }
+  if (!run) supervisor?.kill()
+  broadcast({ type: 'settings', watch: settings!.get().watch, model: settings!.get().model })
+}
+
+/** What helps a bug report, and nothing private: no keys, no screenshots, no task text. */
+function diagnostics(): string {
+  const set = KEY_NAMES.filter((k) => lastInit?.keys?.[k]).join(', ') || 'none'
+  return [
+    `JevAuto ${app.getVersion()} (${app.isPackaged ? 'packaged' : 'dev'}) · macOS ${release()} · ${process.arch}`,
+    `keys set: ${set} · model: ${settings?.get().model} · watch: ${settings?.get().watch}`,
+    ...status.slice(-60).filter((line) => !/sk-|key=/i.test(line)),
+  ].join('\n')
+}
 const status: string[] = ['JevAuto: starting']
 
 export function emit(line: string) {
@@ -58,6 +86,10 @@ const Command = z.discriminatedUnion('type', [
   z.object({ type: z.literal('settings') }),
   z.object({ type: z.literal('watch'), on: z.boolean() }),
   z.object({ type: z.literal('model'), id: z.enum(MODELS.map((m) => m.id) as [ModelId, ...ModelId[]]) }),
+  z.object({ type: z.literal('set-key'), name: z.enum(KEY_NAMES as [KeyName, ...KeyName[]]), value: z.string().max(500) }),
+  z.object({ type: z.literal('set-excluded'), apps: z.array(z.string().trim().min(1).max(200)).max(100) }),
+  z.object({ type: z.literal('open-privacy'), pane: z.enum(['accessibility', 'screen']) }),
+  z.object({ type: z.literal('diagnostics') }),
 ])
 
 ipcMain.handle('jevauto:command', (event, raw: unknown) => {
@@ -66,11 +98,27 @@ ipcMain.handle('jevauto:command', (event, raw: unknown) => {
   if (!parsed.success) return { ok: false, error: 'Unknown command' }
   const command = parsed.data
   if (command.type === 'status') return { ok: true, value: status }
-  if (command.type === 'settings') return { ok: true, value: { watch, model, models: availableModels() } }
+  if (command.type === 'settings') return { ok: true, value: settingsView() }
   if (command.type === 'watch' || command.type === 'model') {
-    if (command.type === 'watch') watch = command.on
-    else model = command.id
-    broadcast({ type: 'settings', watch, model })
+    const next = settings!.update(command.type === 'watch' ? { watch: command.on } : { model: command.id })
+    broadcast({ type: 'settings', watch: next.watch, model: next.model })
+    return { ok: true, value: null }
+  }
+  if (command.type === 'set-excluded') {
+    settings!.update({ excluded: command.apps })
+    return { ok: true, value: settingsView() }
+  }
+  if (command.type === 'set-key') {
+    keys!.set(command.name, command.value)
+    applyKeys()
+    return { ok: true, value: settingsView() }
+  }
+  if (command.type === 'open-privacy') {
+    void shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?${command.pane === 'accessibility' ? 'Privacy_Accessibility' : 'Privacy_ScreenCapture'}`)
+    return { ok: true, value: null }
+  }
+  if (command.type === 'diagnostics') {
+    clipboard.writeText(diagnostics())
     return { ok: true, value: null }
   }
   if (command.type === 'stop') stopWork()
@@ -144,9 +192,9 @@ async function startAgent() {
     evidenceDir: join(app.getPath('userData'), 'evidence'),
     runsDir: join(app.getPath('userData'), 'runs'),
     browserProfileDir: join(app.getPath('userData'), 'browser-profile'),
-    keys: loadKeys(),
+    keys: { ...loadKeys(), ...keys!.all() },
   }
-  if (!init.keys?.openai) emit('No OpenAI key found. Add OPENAI_API_KEY to .env.local and restart JevAuto.')
+  if (!Object.values(init.keys ?? {}).some(Boolean)) emit('No model keys yet. Add one in Settings (or .env.local).')
   lastInit = init
   supervisor = new Supervisor(
     () => {
@@ -222,12 +270,13 @@ async function startTask(task: string) {
   }
   const controller = new AbortController()
   run = controller
+  const { watch, model, excluded } = settings!.get()
   // In Watch mode JevAuto's own window steps aside so it never covers the app being worked in; the island stays.
   const stepAside = watch && ui?.activity.isVisible() === true
   if (stepAside) ui?.activity.hide()
   broadcast({ type: 'status', status: { state: 'working', title: task } })
   try {
-    const r = await supervisor.request<RunOutcome>('agent.run', { task, watch, model }, { signal: controller.signal })
+    const r = await supervisor.request<RunOutcome>('agent.run', { task, watch, model, excluded }, { signal: controller.signal })
     emit(`${r.status}: ${r.summary} (${r.actions} actions, ${r.turns} turns, ${(r.ms / 1000).toFixed(1)} s, $${r.usd.toFixed(3)}) · log ${r.log}`)
   } catch (error) {
     if (!controller.signal.aborted) {
@@ -272,6 +321,12 @@ async function watchDisplays() {
 }
 
 app.whenReady().then(async () => {
+  settings = new SettingsStore(app.getPath('userData'))
+  keys = new KeyStore(app.getPath('userData'), {
+    available: () => safeStorage.isEncryptionAvailable(),
+    encrypt: (text) => safeStorage.encryptString(text),
+    decrypt: (data) => safeStorage.decryptString(data),
+  })
   ui = new UiCoordinator(join(root, '../preload/index.cjs'), load)
   // ⌃⌥Space, not ⌥Space: ChatGPT owns that one (spec §9).
   if (!globalShortcut.register('Control+Alt+Space', () => ui?.toggleCommandBar()))
