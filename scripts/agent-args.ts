@@ -1,6 +1,7 @@
 import { parseArgs } from 'node:util'
 import { DEFAULT_BUDGET, type Budget } from '../src/agent/loop/budget'
 import type { Answer } from '../src/agent/loop/run'
+import { DEVELOPER_APPS } from '../src/agent/loop/targets'
 import { PHASE0_MODELS } from '../src/shared/constants'
 
 export type AgentArgs = { task: string; model: string; budget: Budget; watch: boolean; excluded: string[] }
@@ -49,9 +50,7 @@ export function answerOf(input: string, runOffered: boolean): Answer {
   return 'deny'
 }
 
-const TERMINALS = ['com.apple.Terminal', 'com.googlecode.iterm2', 'com.mitchellh.ghostty', 'dev.warp.Warp-Stable', 'com.github.wez.wezterm', 'org.alacritty', 'net.kovidgoyal.kitty', 'com.microsoft.VSCode', 'com.todesktop.230313mzl4w4u92', 'dev.zed.Zed']
-
 /** macOS passes the launching app's bundle id to its shell in __CFBundleIdentifier. */
 export function avoidBundles(env: NodeJS.ProcessEnv): string[] {
-  return [...new Set([env.__CFBundleIdentifier, ...TERMINALS].filter((b): b is string => Boolean(b)))]
+  return [...new Set([env.__CFBundleIdentifier, ...DEVELOPER_APPS].filter((b): b is string => Boolean(b)))]
 }

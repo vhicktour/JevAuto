@@ -477,6 +477,17 @@ test('JevAuto never opens or targets itself, even by name', async () => {
   assert.match((script.nexts[0].results[0] as { output: string }).output, /JevAuto does not control itself/)
 })
 
+test('a provider failure ends the run with the real reason in plain words', async () => {
+  const world = new World()
+  const script = new Script([])
+  script.start = async () => {
+    throw Object.assign(new Error('429 You have no credits remaining.'), { status: 429, type: 'insufficient_quota', code: 'credit_balance_exhausted' })
+  }
+  const result = await runTask(deps(world, script).d)
+  assert.equal(result.status, 'error')
+  assert.match(result.summary, /out of credits/)
+})
+
 test('the action budget stops the run unless you extend it', async () => {
   const world = new World()
   const script = new Script(Array.from({ length: 10 }, (_, i) => ({ actions: [BOLD(`c${i}`)] })))

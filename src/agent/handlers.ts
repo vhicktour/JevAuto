@@ -7,6 +7,7 @@ import { readFocus, readFrontmost } from '../shared/native'
 import { INSTRUCTIONS } from './loop/instructions'
 import { runTask, type Answer } from './loop/run'
 import { RunLog } from './loop/runlog'
+import { DEVELOPER_APPS } from './loop/targets'
 import { openAIAdapter } from './providers/openai/adapter'
 import { loadStagedCua, MacDriver } from './mac/cua'
 import { runSpikeA, SpikeAParams, startLongType } from './spikes/spike-a'
@@ -73,6 +74,7 @@ async function agentRun(params: unknown, ctx: HandlerContext) {
       signal: ctx.signal,
       emit: ctx.emit,
       front: watch,
+      avoid: DEVELOPER_APPS,
       ...(web ? { web } : {}),
     })
     return { ...result, log: log.path }

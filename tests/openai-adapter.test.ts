@@ -115,6 +115,32 @@ test('cost follows OpenAI usage: uncached, cached and cache-write input are pric
   assert.equal(costUsd('no-such-model', usage), undefined)
 })
 
-test('a model request that hangs is cut off and retried instead of stalling the run for minutes', () => {
-  assert.deepEqual(OPENAI_CLIENT_OPTIONS, { timeout: 90_000, maxRetries: 2 })
+test('a model request that hangs is cut off; JevAuto, not the SDK, decides what to retry', () => {
+  assert.deepEqual(OPENAI_CLIENT_OPTIONS, { timeout: 90_000, maxRetries: 0 })
+})
+
+function flaky(errors: unknown[]) {
+  let calls = 0
+  return {
+    get calls() {
+      return calls
+    },
+    responses: {
+      create: async () => {
+        calls += 1
+        const e = errors.shift()
+        if (e) throw e
+        return { id: 'r1', output: [], usage: {} }
+      },
+    },
+  }
+}
+
+test('a rate limit or a server error is retried; an empty balance or a bad key fails at once', async () => {
+  const retried = flaky([Object.assign(new Error('429'), { status: 429, code: 'rate_limit_exceeded' }), Object.assign(new Error('503'), { status: 503 })])
+  await new OpenAIAdapter(retried, 'gpt-6-sol', 'x', 1).start({ task: 't', context: 'c' })
+  assert.equal(retried.calls, 3)
+  const broke = flaky([Object.assign(new Error('429'), { status: 429, type: 'insufficient_quota', code: 'credit_balance_exhausted' })])
+  await assert.rejects(new OpenAIAdapter(broke, 'gpt-6-sol', 'x', 1).start({ task: 't', context: 'c' }), /429/)
+  assert.equal(broke.calls, 1)
 })

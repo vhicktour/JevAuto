@@ -10,6 +10,12 @@ export type Window = Target & { title: string; bounds?: Rect; z: number }
 /** macOS shows a sandboxed app's Open and Save panels from a separate service process. */
 const PANEL_SERVICE = /open ?and ?save ?panel/i
 const NOT_CONTROLS = new Set(['AXWindow', 'AXMenuBar', 'AXMenuBarItem', 'AXMenu', 'AXMenuItem'])
+/**
+ * Never picked as the first target on their own: the terminal or editor you may be running JevAuto (or Claude Code)
+ * from. A task can still name them; this only changes which window a run starts in.
+ */
+export const DEVELOPER_APPS = ['com.apple.Terminal', 'com.googlecode.iterm2', 'com.mitchellh.ghostty', 'dev.warp.Warp-Stable', 'com.github.wez.wezterm', 'org.alacritty', 'net.kovidgoyal.kitty', 'com.microsoft.VSCode', 'com.todesktop.230313mzl4w4u92', 'dev.zed.Zed']
+
 /** Names people (and models) use for apps whose real name differs. */
 export const ALIASES: Record<string, string> = {
   imessage: 'messages',

@@ -2,6 +2,7 @@ import { windowsOf, windowStateOf, type ElementInfo } from '../mac/results'
 import type { Mac } from '../mac/visible'
 import type { IrAction } from '../providers/ir'
 import { costUsd } from '../providers/prices'
+import { explainError } from '../providers/errors'
 import type { Focus } from '../../shared/native'
 import type { Adapter, CallResult, Turn } from './adapter'
 import { DEFAULT_BUDGET, Meter, type Budget, type Limit } from './budget'
@@ -83,14 +84,9 @@ export function groupCalls(actions: IrAction[]): Call[] {
   return calls
 }
 
-function friendly(error: unknown): string {
-  const status = (error as { status?: number })?.status
-  if (status === 401) return 'The model provider rejected the API key.'
-  if (status === 403) return 'The model provider refused the request (403).'
-  if (status === 429) return 'The model provider’s rate limit was reached. Try again in a minute.'
-  if (typeof status === 'number' && status >= 500) return 'The model provider had a server error. Try again.'
+function friendly(provider: Adapter['provider'], error: unknown): string {
   if (error instanceof ObserveError) return `JevAuto could not see the window: ${error.message}`
-  return error instanceof Error ? error.message : String(error)
+  return explainError(provider, error)
 }
 
 const sameElement = (a: ElementInfo, b: ElementInfo | undefined) =>
@@ -509,7 +505,8 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
     }
   } catch (error) {
     if (signal.aborted) return finish('stopped', 'Stopped by you.')
-    d.log.write('error', { message: friendly(error) })
-    return finish('error', friendly(error))
+    const message = friendly(adapter.provider, error)
+    d.log.write('error', { message })
+    return finish('error', message)
   }
 }

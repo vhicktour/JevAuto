@@ -3,6 +3,7 @@ import { CANVAS } from '../../frame/frame'
 import type { Adapter, CallResult, Turn } from '../../loop/adapter'
 import { TOOL_DEFS } from '../../loop/tools'
 import { parseOpenAI } from './parse'
+import { shouldRetry } from '../errors'
 
 type Body = Record<string, unknown>
 type Response = { id: string; output: unknown[]; usage?: { input_tokens?: number; output_tokens?: number; input_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number } } }
@@ -25,6 +26,8 @@ export class OpenAIAdapter implements Adapter {
     private readonly client: OpenAIClient,
     readonly model: string,
     private readonly instructions: string,
+    /** The first wait before asking again; it doubles each time (tests shorten it). */
+    private readonly retryDelayMs = 1000,
   ) {}
 
   async start(input: { task: string; context: string; image?: string }, signal?: AbortSignal): Promise<Turn> {
@@ -48,6 +51,21 @@ export class OpenAIAdapter implements Adapter {
     return this.send(items, signal)
   }
 
+  /** Up to three tries, only for failures that can pass on their own (never an empty balance or a bad key). */
+  private async create(body: Body, signal?: AbortSignal): Promise<unknown> {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await this.client.responses.create(body, signal ? { signal } : undefined)
+      } catch (error) {
+        if (attempt >= 3 || signal?.aborted || !shouldRetry(error)) throw error
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(resolve, this.retryDelayMs * 2 ** (attempt - 1))
+          signal?.addEventListener('abort', () => (clearTimeout(timer), reject(signal.reason)), { once: true })
+        })
+      }
+    }
+  }
+
   private async send(input: Body[], signal?: AbortSignal): Promise<Turn> {
     const body: Body = {
       model: this.model,
@@ -56,7 +74,7 @@ export class OpenAIAdapter implements Adapter {
       ...(this.previous ? { previous_response_id: this.previous } : {}),
       input,
     }
-    const response = (await this.client.responses.create(body, signal ? { signal } : undefined)) as Response
+    const response = (await this.create(body, signal)) as Response
     this.previous = response.id
     const u = response.usage
     return {
@@ -74,9 +92,10 @@ export class OpenAIAdapter implements Adapter {
 
 /**
  * The SDK waits up to ten minutes by default; one request once took 303 s. A turn is only acted on once it has fully
- * arrived, so cutting a hung request off and asking again is safe.
+ * arrived, so cutting a hung request off and asking again is safe. The adapter retries, not the SDK, so an empty
+ * balance fails at once instead of three times.
  */
-export const OPENAI_CLIENT_OPTIONS = { timeout: 90_000, maxRetries: 2 } as const
+export const OPENAI_CLIENT_OPTIONS = { timeout: 90_000, maxRetries: 0 } as const
 
 /** An adapter on the real SDK. Without `apiKey` the SDK reads OPENAI_API_KEY (the terminal runner's .env.local). */
 export function openAIAdapter(model: string, instructions: string, apiKey?: string): OpenAIAdapter {
