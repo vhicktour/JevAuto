@@ -4,7 +4,7 @@ import { windowStateOf, type ElementInfo } from '../mac/results'
 import type { Mac } from '../mac/visible'
 
 /** The one window the model sees and acts in ("the window is the screen", spec §4). */
-export type Target = { pid: number; windowId: number; app: string; title?: string }
+export type Target = { pid: number; windowId: number; app: string; title?: string; bundleId?: string }
 
 export type Observation = {
   target: Target

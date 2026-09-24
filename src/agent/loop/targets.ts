@@ -1,0 +1,85 @@
+import { windowsOf } from '../mac/results'
+import type { Mac } from '../mac/visible'
+import type { Rect } from '../frame/frame'
+import { exclusionReason } from './gate'
+import type { Target } from './observe'
+
+type AppRecord = { pid: number; bundleId?: string; name: string; running: boolean }
+export type Window = Target & { title: string; bounds?: Rect; z: number }
+
+/** macOS shows a sandboxed app's Open and Save panels from a separate service process. */
+const PANEL_SERVICE = /open ?and ?save ?panel/i
+
+/** Which windows exist, which may be acted in, and how the target follows new windows (spec §4). */
+export class Targets {
+  private apps: AppRecord[] = []
+  private byPid = new Map<number, AppRecord>()
+  private known = new Set<number>()
+
+  constructor(
+    private readonly mac: Mac,
+    private readonly excluded: string[] = [],
+  ) {}
+
+  /** `list_apps` is slow (~0.9 s), so it runs at start and again only for a pid it has not seen. */
+  async refreshApps(signal?: AbortSignal) {
+    const r = await this.mac.call('list_apps', {}, signal)
+    const list = ((r.structured as { apps?: unknown[] })?.apps ?? []) as { pid?: number; bundle_id?: string; name?: string; running?: boolean }[]
+    this.apps = list.filter((a) => typeof a.name === 'string').map((a) => ({ pid: a.pid ?? 0, bundleId: a.bundle_id, name: a.name!, running: a.running === true }))
+    this.byPid = new Map(this.apps.filter((a) => a.running && a.pid > 0).map((a) => [a.pid, a]))
+  }
+
+  private async bundleOf(pid: number, signal?: AbortSignal): Promise<string | undefined> {
+    if (!this.byPid.has(pid)) await this.refreshApps(signal)
+    return this.byPid.get(pid)?.bundleId
+  }
+
+  /** On-screen windows, frontmost first, each with its app's bundle id. */
+  async windows(signal?: AbortSignal): Promise<Window[]> {
+    const r = await this.mac.call('list_windows', { on_screen_only: true }, signal)
+    const out: Window[] = []
+    for (const w of windowsOf(r.structured)) {
+      const b = w.bounds
+      if (w.is_on_screen === false || !b || b.width < 50 || b.height < 50) continue
+      if (!w.title && b.width * b.height < 100 * 100) continue
+      out.push({ pid: w.pid, windowId: w.window_id, app: w.app_name ?? 'App', title: w.title ?? '', bounds: b, z: w.z_index ?? -1, bundleId: await this.bundleOf(w.pid, signal) })
+    }
+    this.known = new Set(out.map((w) => w.windowId))
+    return out.sort((a, b) => b.z - a.z)
+  }
+
+  allowed(windows: Window[]): Window[] {
+    return windows.filter((w) => exclusionReason(w, this.excluded) === undefined)
+  }
+
+  /** The frontmost window you could see and JevAuto may act in, skipping `avoid` (the terminal running the CLI). */
+  async initial(avoid: string[], signal?: AbortSignal): Promise<Window | undefined> {
+    return this.allowed(await this.windows(signal)).find((w) => !w.bundleId || !avoid.includes(w.bundleId))
+  }
+
+  /**
+   * After an action: a window the target's app (or its Open/Save panel service) just opened becomes the target.
+   * Returns the new window, `null` when the target closed, or undefined when nothing changed.
+   */
+  async follow(target: Target, signal?: AbortSignal): Promise<Window | null | undefined> {
+    const before = this.known
+    const now = await this.windows(signal)
+    const fresh = now.filter((w) => !before.has(w.windowId) && (w.pid === target.pid || PANEL_SERVICE.test(w.app)))
+    if (fresh.length) return fresh[0]
+    return now.some((w) => w.windowId === target.windowId) ? undefined : null
+  }
+
+  /** Finds an installed app by name: exact first, then prefix, running apps first. */
+  findApp(name: string): AppRecord | undefined {
+    const n = name.trim().toLowerCase().replace(/\.app$/, '')
+    const rank = (a: AppRecord) => (a.running ? 0 : 1)
+    const sorted = [...this.apps].sort((a, b) => rank(a) - rank(b))
+    return sorted.find((a) => a.name.toLowerCase() === n) ?? sorted.find((a) => a.name.toLowerCase().startsWith(n))
+  }
+
+  exclusion(t: Target): string | undefined {
+    return exclusionReason(t, this.excluded)
+  }
+}
+
+export const describeWindow = (w: Target) => `${w.app}${w.title ? ` — “${w.title}”` : ''} (window ${w.windowId})`
