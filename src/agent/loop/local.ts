@@ -21,7 +21,13 @@ export async function localRuntime(root: string, browserProfile = DEV_BROWSER_PR
     web,
     focus: (pid: number, windowId: number) => (web.isWeb(windowId) ? web.focus(windowId) : readFocus(helper, pid)).catch(() => 'unknown' as const),
     frontmost: () => readFrontmost(helper).catch(() => undefined),
-    adapter: (model: string) => adapterFor(model, INSTRUCTIONS, { openai: process.env.OPENAI_API_KEY, google: process.env.GEMINI_API_KEY }),
+    adapter: (model: string) =>
+      adapterFor(model, INSTRUCTIONS, {
+        openai: process.env.OPENAI_API_KEY,
+        google: process.env.GEMINI_API_KEY,
+        anthropic: process.env.ANTHROPIC_API_KEY,
+        anthropicWorkspace: process.env.ANTHROPIC_WORKSPACE_ID || undefined,
+      }),
     close: async () => {
       await web.close()
       await driver.close()

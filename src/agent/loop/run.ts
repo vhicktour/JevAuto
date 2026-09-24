@@ -434,6 +434,8 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
       }
       let safety = turn.safety.filter((s) => s.callId === call.callId).flatMap((s) => (Array.isArray(s.detail) ? s.detail : [s.detail]))
       let acknowledged: unknown[] | undefined
+      let status: 'ok' | 'failed' | 'not-run' = halted || ended ? 'not-run' : 'ok'
+      let message: string | undefined
       for (const a of call.actions) {
         if (halted || ended) {
           notRun.push(describeAction(a))
@@ -454,9 +456,14 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
         if (step.acted) acted = true
         if (step.note) notes.push(step.note)
         if (step.targetChanged) targetChanged = true
-        if (step.halt) halted = step.halt
+        if (step.halt) {
+          halted = step.halt
+          status = 'failed'
+          message = step.halt
+        }
       }
-      results.push({ callId: call.callId, kind: 'computer', ...(acknowledged ? { acknowledged } : {}) })
+      if (status === 'ok' && halted && call.actions.every((a) => notRun.includes(describeAction(a)))) status = 'not-run'
+      results.push({ callId: call.callId, kind: 'computer', status, ...(message ? { message } : {}), ...(acknowledged ? { acknowledged } : {}) })
     }
     if (halted) notes.push(`Stopped this turn: ${halted}.${notRun.length ? ` Not run: ${notRun.join('; ')}.` : ''}`)
     return { results, notes, acted, ended }

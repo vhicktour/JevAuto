@@ -7,6 +7,10 @@ const PRICES: Record<string, Price> = {
   'gpt-6-sol': { input: 2, cachedInput: 0.2, cacheWrite: 2.5, output: 10 },
   'gpt-6-luna': { input: 0.1, cachedInput: 0.01, cacheWrite: 0.125, output: 0.5 },
   'gpt-6-astra': { input: 10, cachedInput: 1, cacheWrite: 12.5, output: 50 },
+  // Claude: cache reads are 0.1× input and 5-minute cache writes 1.25× (Anthropic pricing, spec appendix rates).
+  'claude-opus-5-5': { input: 4, cachedInput: 0.4, cacheWrite: 5, output: 20 },
+  'claude-sonnet-5': { input: 2, cachedInput: 0.2, cacheWrite: 2.5, output: 10 },
+  'claude-fable-5-1': { input: 10, cachedInput: 1, cacheWrite: 12.5, output: 50 },
   // Gemini API pricing page, read 2026-09-24. 3.8 Flash doubles on 2027-01-01. Gemini has no cache-write charge.
   'gemini-3.8-flash': { input: 0.75, cachedInput: 0.075, cacheWrite: 0.75, output: 3.75 },
   'gemini-3.5-flash': { input: 1.5, cachedInput: 0.15, cacheWrite: 1.5, output: 9 },

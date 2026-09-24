@@ -6,7 +6,8 @@ export type Turn = ParsedTurn & { id: string; usage: Usage }
 
 /** Exactly one result per call, in call order (spec §7 rule 4). A computer call's output is the latest screenshot. */
 export type CallResult =
-  | { callId: string; kind: 'computer'; acknowledged?: unknown[] }
+  /** `status` says whether the call's actions ran; `not-run` when an earlier failure in the turn halted it (spec §7). */
+  | { callId: string; kind: 'computer'; acknowledged?: unknown[]; status?: 'ok' | 'failed' | 'not-run'; message?: string }
   | { callId: string; kind: 'function'; name: string; output: string }
 
 /** A provider behind the IR. Tools and instructions are fixed when the adapter is made and never change during a run. */

@@ -1,5 +1,6 @@
 import type { Adapter } from '../loop/adapter'
 import type { AgentInit } from '../../shared/protocol'
+import { anthropicAdapter } from './anthropic/adapter'
 import { geminiAdapter } from './google/adapter'
 import { openAIAdapter } from './openai/adapter'
 
@@ -14,6 +15,10 @@ export function adapterFor(model: string, instructions: string, keys: Keys): Ada
   if (model.startsWith('gemini-')) {
     if (!keys.google) throw new Error('No Gemini key: add GEMINI_API_KEY to .env.local, then restart JevAuto.')
     return geminiAdapter(model, instructions, keys.google)
+  }
+  if (model.startsWith('claude-')) {
+    if (!keys.anthropic) throw new Error('No Anthropic key: add ANTHROPIC_API_KEY to .env.local, then restart JevAuto.')
+    return anthropicAdapter(model, instructions, keys.anthropic, keys.anthropicWorkspace)
   }
   throw new Error(`JevAuto has no adapter for ${model} yet.`)
 }

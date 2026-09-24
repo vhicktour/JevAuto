@@ -9,7 +9,8 @@ export type IrAction =
   | { kind: 'click'; callId: string; x: number; y: number; space: Space; button: 'left' | 'right' | 'middle'; count?: number; keys?: string[] }
   | { kind: 'move'; callId: string; x: number; y: number; space: Space }
   | { kind: 'drag'; callId: string; path: IrPoint[]; space: Space; keys?: string[] }
-  | { kind: 'scroll'; callId: string; x: number; y: number; space: Space; dx: number; dy: number; keys?: string[] }
+  /** `notches`, when the model counts wheel clicks (Claude), wins over the pixel distance (OpenAI, Gemini). */
+  | { kind: 'scroll'; callId: string; x: number; y: number; space: Space; dx: number; dy: number; notches?: number; keys?: string[] }
   | { kind: 'type'; callId: string; text: string }
   | { kind: 'keys'; callId: string; keys: string[] }
   | { kind: 'wait'; callId: string }

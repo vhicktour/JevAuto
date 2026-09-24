@@ -4,7 +4,7 @@ import { parseAnthropic } from '../src/agent/providers/anthropic/parse'
 import { parseOpenAI } from '../src/agent/providers/openai/parse'
 import { parseGoogle } from '../src/agent/providers/google/parse'
 
-test('Anthropic: toolset members become IR actions; custom tools stay "other"', () => {
+test('Anthropic: toolset members become IR actions; custom tools become tools', () => {
   const turn = parseAnthropic({
     stop_reason: 'tool_use',
     content: [
@@ -17,7 +17,7 @@ test('Anthropic: toolset members become IR actions; custom tools stay "other"', 
   assert.deepEqual(turn.actions, [
     { kind: 'screenshot', callId: 't1' },
     { kind: 'click', callId: 't2', x: 640, y: 412, space: 'pixels', button: 'left' },
-    { kind: 'other', callId: 't3', name: 'list_windows', input: {} },
+    { kind: 'tool', callId: 't3', name: 'list_windows', input: {} },
   ])
   assert.deepEqual(turn.text, ['Clicking Continue.'])
 })

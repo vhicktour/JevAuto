@@ -18,6 +18,8 @@ export function explainError(provider: Provider, error: unknown): string {
   const p = NAMES[provider]
   const f = fields(error)
   if (outOfCredit(f)) return `Your ${p.label} account is out of credits. Add credits at ${p.billing}, then run the task again.`
+  if (provider === 'anthropic' && f.status === 400 && /anthropic-workspace-id/.test(f.message ?? ''))
+    return 'Your Anthropic key belongs to an organisation, so it needs a workspace: add ANTHROPIC_WORKSPACE_ID to .env.local, then restart JevAuto.'
   if (f.status === 429) return `${p.label}'s rate limit was reached. Try again in a minute.`
   if (f.status === 401) return `${p.label} rejected the API key. Check ${p.key} in .env.local.`
   if (f.status === 403) return `${p.label} refused this request (403). Check that ${p.key} is allowed to use this model.`

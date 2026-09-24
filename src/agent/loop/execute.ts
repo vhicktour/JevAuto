@@ -75,8 +75,9 @@ export function planAction(a: IrAction, obs: Observation): Plan {
       if (!at) return outside(a)
       if (a.keys?.length) return { kind: 'error', message: 'Scrolling with keys held is not supported.' }
       const calls: CuaCall[] = []
-      if (a.dy) calls.push({ tool: 'scroll', args: { ...target, x: at.px.x, y: at.px.y, direction: a.dy > 0 ? 'down' : 'up', amount: notches(a.dy, obs) } })
-      if (a.dx) calls.push({ tool: 'scroll', args: { ...target, x: at.px.x, y: at.px.y, direction: a.dx > 0 ? 'right' : 'left', amount: notches(a.dx, obs) } })
+      const amount = (d: number) => (a.notches ? Math.min(50, Math.max(1, Math.round(a.notches))) : notches(d, obs))
+      if (a.dy) calls.push({ tool: 'scroll', args: { ...target, x: at.px.x, y: at.px.y, direction: a.dy > 0 ? 'down' : 'up', amount: amount(a.dy) } })
+      if (a.dx) calls.push({ tool: 'scroll', args: { ...target, x: at.px.x, y: at.px.y, direction: a.dx > 0 ? 'right' : 'left', amount: amount(a.dx) } })
       return calls.length ? { kind: 'cua', calls, point: at.screen } : { kind: 'noop', note: 'A scroll of zero does nothing.' }
     }
     case 'keys': {

@@ -26,3 +26,8 @@ test('only failures that can pass on their own are retried', () => {
   for (const e of [api(429, { code: 'rate_limit_exceeded' }), api(500), api(503), api(408), Object.assign(new Error('x'), { name: 'APIConnectionTimeoutError' })]) assert.equal(shouldRetry(e), true)
   for (const e of [api(400), api(401), api(403), api(404), api(429, { code: 'insufficient_quota' })]) assert.equal(shouldRetry(e), false)
 })
+
+test('an Anthropic organisation key without its workspace says which setting is missing', () => {
+  const e = Object.assign(new Error('400 {"error":{"message":"This API key is not scoped to a workspace, so this request must include the anthropic-workspace-id header"}}'), { status: 400 })
+  assert.match(explainError('anthropic', e), /ANTHROPIC_WORKSPACE_ID/)
+})
