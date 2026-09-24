@@ -88,7 +88,7 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
   const foreground = new Set<number>()
   let target: Target | undefined
   let obs: Observation | undefined
-  let snap: { id?: string; elements: ElementInfo[] } = { elements: [] }
+  let snap: { id?: string; elements: ElementInfo[]; probes: number } = { elements: [], probes: 0 }
   let turns = 0
   let stall = 0
 
@@ -119,7 +119,7 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
     const r = await d.mac.call('get_window_state', { pid: target.pid, window_id: target.windowId, include_screenshot: false }, signal)
     if (r.isError) return
     const state = windowStateOf(r.structured)
-    snap = { id: state.snapshotId, elements: state.elements }
+    snap = { id: state.snapshotId, elements: state.elements, probes: targets.probes }
   }
 
   async function retarget(w: Target) {
@@ -136,7 +136,7 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
     }
     try {
       obs = await observe(d.mac, target, adapter.canvas, signal)
-      snap = { id: obs.snapshotId, elements: obs.elements }
+      snap = { id: obs.snapshotId, elements: obs.elements, probes: targets.probes }
       target = obs.target
       d.log.write('observe', { window: target.windowId, title: obs.title, capture: obs.frame.capture })
       return undefined
@@ -245,6 +245,8 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
     let plan: Plan
     if (a.kind === 'type' || a.kind === 'keys') {
       focus = await d.focus(t.pid)
+      // Another window was snapshotted since ours; Cua may treat our element indexes as stale, so read them again.
+      if (a.kind === 'type' && snap.probes !== targets.probes) await refreshSnap()
       const view = { ...obs, target: t, snapshotId: snap.id, elements: snap.elements }
       if (a.kind === 'type') {
         element = focus === 'unknown' ? undefined : focusedElement(focus, snap.elements)
@@ -382,9 +384,10 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
       await retarget(first)
       await look()
     }
-    d.log.write('run.start', { task: d.task, provider: adapter.provider, model: adapter.model, budget: d.budget ?? DEFAULT_BUDGET, target: target ?? null })
+    const opening = context(windows)
+    d.log.write('run.start', { task: d.task, provider: adapter.provider, model: adapter.model, budget: d.budget ?? DEFAULT_BUDGET, target: target ?? null, context: opening })
     announce('working', d.task)
-    let turn = await adapter.start({ task: d.task, context: context(windows), image: obs?.image }, signal)
+    let turn = await adapter.start({ task: d.task, context: opening, image: obs?.image }, signal)
     for (;;) {
       turns += 1
       meter.addCost(costUsd(adapter.model, turn.usage) ?? 0)

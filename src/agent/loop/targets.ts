@@ -1,4 +1,4 @@
-import { windowsOf } from '../mac/results'
+import { windowsOf, windowStateOf } from '../mac/results'
 import type { Mac } from '../mac/visible'
 import type { Rect } from '../frame/frame'
 import { exclusionReason } from './gate'
@@ -9,12 +9,16 @@ export type Window = Target & { title: string; bounds?: Rect; z: number }
 
 /** macOS shows a sandboxed app's Open and Save panels from a separate service process. */
 const PANEL_SERVICE = /open ?and ?save ?panel/i
+const NOT_CONTROLS = new Set(['AXWindow', 'AXMenuBar', 'AXMenuBarItem', 'AXMenu', 'AXMenuItem'])
 
 /** Which windows exist, which may be acted in, and how the target follows new windows (spec §4). */
 export class Targets {
   private apps: AppRecord[] = []
   private byPid = new Map<number, AppRecord>()
   private known = new Set<number>()
+  private untitled = new Map<number, boolean>()
+  /** Snapshots taken of windows other than the target; the loop re-reads its own snapshot when this changes. */
+  probes = 0
 
   constructor(
     private readonly mac: Mac,
@@ -41,11 +45,25 @@ export class Targets {
     for (const w of windowsOf(r.structured)) {
       const b = w.bounds
       if (w.is_on_screen === false || !b || b.width < 50 || b.height < 50) continue
-      if (!w.title && b.width * b.height < 100 * 100) continue
+      if (!w.title && (b.width * b.height < 100 * 100 || !(await this.hasControls(w.pid, w.window_id, signal)))) continue
       out.push({ pid: w.pid, windowId: w.window_id, app: w.app_name ?? 'App', title: w.title ?? '', bounds: b, z: w.z_index ?? -1, bundleId: await this.bundleOf(w.pid, signal) })
     }
     this.known = new Set(out.map((w) => w.windowId))
     return out.sort((a, b) => b.z - a.z)
+  }
+
+  /**
+   * An untitled window counts only when it holds at least two controls: alerts and sheets do, while helper windows
+   * such as the Siri orb macOS 27 attaches to text apps (one button, subrole AXDialog like a real dialog) do not.
+   */
+  private async hasControls(pid: number, windowId: number, signal?: AbortSignal): Promise<boolean> {
+    const known = this.untitled.get(windowId)
+    if (known !== undefined) return known
+    const r = await this.mac.call('get_window_state', { pid, window_id: windowId, include_screenshot: false, max_elements: 40 }, signal)
+    this.probes += 1
+    const controls = r.isError ? 0 : windowStateOf(r.structured).elements.filter((e) => !NOT_CONTROLS.has(e.role)).length
+    this.untitled.set(windowId, controls >= 2)
+    return controls >= 2
   }
 
   allowed(windows: Window[]): Window[] {
