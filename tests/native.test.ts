@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { resolve } from 'node:path'
-import { readDisplays, readFrontmost, readMouse, islandRect, overlayRect, type NativeDisplay } from '../src/shared/native'
+import { readDisplays, readFrontmost, readMouse, readFocus, islandRect, overlayRect, type NativeDisplay } from '../src/shared/native'
 
 const HELPER = resolve('native/build/JevNative')
 
@@ -23,6 +23,19 @@ test('JevNative reports the frontmost app and the mouse state', async () => {
   assert.ok(front.pid > 0)
   const mouse = await readMouse(HELPER)
   assert.ok(Number.isInteger(mouse.pressedButtons) && Number.isInteger(mouse.modifierFlags))
+})
+
+test('JevNative reports no focused element for a process without UI', async () => {
+  const focus = await readFocus(HELPER, process.pid)
+  assert.equal(focus.ok, false)
+  assert.equal(focus.secure, false)
+})
+
+test('JevNative reads the frontmost app\'s focused element with a frame in top-left points', async () => {
+  const front = await readFrontmost(HELPER)
+  const focus = await readFocus(HELPER, front.pid)
+  if (focus.ok && focus.frame) assert.ok(focus.frame.width >= 0 && focus.frame.height >= 0, JSON.stringify(focus))
+  assert.equal(typeof focus.webArea, 'boolean')
 })
 
 const builtIn: NativeDisplay = {

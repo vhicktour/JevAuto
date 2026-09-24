@@ -25,6 +25,11 @@ const KEYS: Record<string, string> = {
   home: 'home', end: 'end',
 }
 
+/** Cua's name for a modifier key, or undefined when `raw` is not one. */
+export function modifierName(raw: string): string | undefined {
+  return MODIFIERS[raw.toLowerCase()]
+}
+
 function keyName(raw: string): string | undefined {
   const k = raw.toLowerCase()
   if (KEYS[k]) return KEYS[k]
@@ -39,7 +44,7 @@ export function toCuaKeys(keys: string[]): CuaKeys | { error: string } {
   const modifiers: string[] = []
   const others: string[] = []
   for (const raw of keys) {
-    const modifier = MODIFIERS[raw.toLowerCase()]
+    const modifier = modifierName(raw)
     if (modifier) {
       if (!modifiers.includes(modifier)) modifiers.push(modifier)
       continue
