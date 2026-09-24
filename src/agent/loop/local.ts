@@ -1,7 +1,7 @@
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { loadStagedCua, MacDriver } from '../mac/cua'
-import { openAIAdapter } from '../providers/openai/adapter'
+import { adapterFor } from '../providers'
 import { readFocus, readFrontmost } from '../../shared/native'
 import { RoutingMac } from '../browser/routing'
 import { WebDriver } from '../browser/web'
@@ -21,7 +21,7 @@ export async function localRuntime(root: string, browserProfile = DEV_BROWSER_PR
     web,
     focus: (pid: number, windowId: number) => (web.isWeb(windowId) ? web.focus(windowId) : readFocus(helper, pid)).catch(() => 'unknown' as const),
     frontmost: () => readFrontmost(helper).catch(() => undefined),
-    adapter: (model: string) => openAIAdapter(model, INSTRUCTIONS),
+    adapter: (model: string) => adapterFor(model, INSTRUCTIONS, { openai: process.env.OPENAI_API_KEY, google: process.env.GEMINI_API_KEY }),
     close: async () => {
       await web.close()
       await driver.close()

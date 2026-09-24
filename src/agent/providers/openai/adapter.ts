@@ -3,7 +3,7 @@ import { CANVAS } from '../../frame/frame'
 import type { Adapter, CallResult, Turn } from '../../loop/adapter'
 import { TOOL_DEFS } from '../../loop/tools'
 import { parseOpenAI } from './parse'
-import { shouldRetry } from '../errors'
+import { withRetry } from '../retry'
 
 type Body = Record<string, unknown>
 type Response = { id: string; output: unknown[]; usage?: { input_tokens?: number; output_tokens?: number; input_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number } } }
@@ -51,21 +51,6 @@ export class OpenAIAdapter implements Adapter {
     return this.send(items, signal)
   }
 
-  /** Up to three tries, only for failures that can pass on their own (never an empty balance or a bad key). */
-  private async create(body: Body, signal?: AbortSignal): Promise<unknown> {
-    for (let attempt = 1; ; attempt++) {
-      try {
-        return await this.client.responses.create(body, signal ? { signal } : undefined)
-      } catch (error) {
-        if (attempt >= 3 || signal?.aborted || !shouldRetry(error)) throw error
-        await new Promise<void>((resolve, reject) => {
-          const timer = setTimeout(resolve, this.retryDelayMs * 2 ** (attempt - 1))
-          signal?.addEventListener('abort', () => (clearTimeout(timer), reject(signal.reason)), { once: true })
-        })
-      }
-    }
-  }
-
   private async send(input: Body[], signal?: AbortSignal): Promise<Turn> {
     const body: Body = {
       model: this.model,
@@ -74,7 +59,7 @@ export class OpenAIAdapter implements Adapter {
       ...(this.previous ? { previous_response_id: this.previous } : {}),
       input,
     }
-    const response = (await this.create(body, signal)) as Response
+    const response = (await withRetry(() => this.client.responses.create(body, signal ? { signal } : undefined), signal, this.retryDelayMs)) as Response
     this.previous = response.id
     const u = response.usage
     return {

@@ -21,10 +21,6 @@ try {
   console.error(error instanceof Error ? error.message : error)
   process.exit(64)
 }
-if (!process.env.OPENAI_API_KEY) {
-  console.error('OPENAI_API_KEY is not set. Add it to .env.local.')
-  process.exit(78)
-}
 
 const controller = new AbortController()
 let stopping = false
@@ -77,6 +73,14 @@ function emit(name: string, data: unknown) {
 }
 
 const { mac, web, focus, frontmost, adapter, close } = await localRuntime(root)
+let model
+try {
+  model = adapter(args.model)
+} catch (error) {
+  console.error(error instanceof Error ? error.message : error)
+  await close()
+  process.exit(78)
+}
 const runId = `${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}`
 const log = RunLog.open(join(homedir(), 'Library/Application Support/JevAuto Dev/runs'), runId)
 const { maxActions, maxMs, maxUsd } = args.budget
@@ -84,7 +88,7 @@ console.log(`JevAuto · ${args.model} · up to ${maxActions} actions, ${maxMs / 
 
 const result = await runTask({
   task: args.task,
-  adapter: adapter(args.model),
+  adapter: model,
   mac: new VisibleMac(mac, emit),
   web,
   focus,

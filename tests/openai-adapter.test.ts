@@ -70,7 +70,7 @@ test('every call is answered: screenshots for computer calls, text for functions
   await adapter.next({
     results: [
       { callId: 'c1', kind: 'computer', acknowledged: [{ id: 's1', code: 'x', message: 'y' }] },
-      { callId: 'f1', kind: 'function', output: '{"windows":[]}' },
+      { callId: 'f1', kind: 'function', name: 'list_windows', output: '{"windows":[]}' },
     ],
     image: 'BBB',
     notes: ['Ran: click.', 'Not run: nothing.'],

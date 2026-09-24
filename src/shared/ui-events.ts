@@ -62,7 +62,7 @@ export const UiEvent = z.discriminatedUnion('type', [
   z.object({ type: z.literal('approval-closed'), id: z.string() }),
   z.object({ type: z.literal('question'), question: UiQuestion }),
   z.object({ type: z.literal('question-closed'), id: z.string() }),
-  /** Watch mode: each target comes to the front so the cursor can be seen working. */
-  z.object({ type: z.literal('settings'), watch: z.boolean() }),
+  /** Watch mode (each target comes to the front so the cursor can be seen working) and the model tasks run on. */
+  z.object({ type: z.literal('settings'), watch: z.boolean(), model: z.string() }),
 ])
 export type UiEvent = z.infer<typeof UiEvent>

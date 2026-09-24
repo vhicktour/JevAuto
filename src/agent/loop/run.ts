@@ -422,12 +422,12 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
       if (call.kind === 'function') {
         const tool = call.actions[0] as Tool
         if (halted || ended) {
-          results.push({ callId: call.callId, kind: 'function', output: JSON.stringify({ error: ended ? 'Not executed: the task was already finished.' : NOT_EXECUTED }) })
+          results.push({ callId: call.callId, kind: 'function', name: tool.name, output: JSON.stringify({ error: ended ? 'Not executed: the task was already finished.' : NOT_EXECUTED }) })
           continue
         }
         const out = await runTool(tool)
         d.log.write('tool', { name: tool.name, output: out.output })
-        results.push({ callId: call.callId, kind: 'function', output: JSON.stringify(out.output) })
+        results.push({ callId: call.callId, kind: 'function', name: tool.name, output: JSON.stringify(out.output) })
         if (out.changedTarget) targetChanged = true
         if (out.ended) ended = out.ended
         continue
@@ -501,12 +501,14 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
         if (answer === 'deny') return finish('budget', `Stopped at the ${LIMITS[over]} budget.`)
         meter.extend(over)
       }
-      turn = await adapter.next({ results, image: obs?.image ?? (await blankCanvas(adapter.canvas)), notes }, signal)
+      turn = await adapter.next({ results, image: obs?.image ?? (await blankCanvas(adapter.canvas)), notes, ...(obs?.url ? { url: obs.url } : {}) }, signal)
     }
   } catch (error) {
     if (signal.aborted) return finish('stopped', 'Stopped by you.')
     const message = friendly(adapter.provider, error)
     d.log.write('error', { message })
     return finish('error', message)
+  } finally {
+    await adapter.close?.().catch(() => undefined)
   }
 }

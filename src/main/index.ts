@@ -9,6 +9,7 @@ import { UiCoordinator } from './ui'
 import { PROTOCOL_VERSION, type AgentInit } from '../shared/protocol'
 import { UiAct, UiApproval, UiDone, UiQuestion, UiStatus, type UiEvent } from '../shared/ui-events'
 import { keysFromEnvFile } from './keys'
+import { MODELS, type ModelId } from '../shared/models'
 import { readDisplays } from '../shared/native'
 
 const root = dirname(fileURLToPath(import.meta.url))
@@ -27,6 +28,9 @@ const sameDocument = (url: string | undefined) => {
 let ui: UiCoordinator | undefined
 /** Watch mode, on by default: targets come to the front so you can see the cursor work. Off keeps JevAuto in the background. */
 let watch = true
+let model: ModelId = MODELS[0].id
+/** Only the models whose provider key JevAuto has. */
+const availableModels = () => MODELS.filter((m) => lastInit?.keys?.[m.key]).map((m) => ({ id: m.id, label: m.label }))
 const status: string[] = ['JevAuto: starting']
 
 export function emit(line: string) {
@@ -53,6 +57,7 @@ const Command = z.discriminatedUnion('type', [
   z.object({ type: z.literal('command-bar'), open: z.boolean() }),
   z.object({ type: z.literal('settings') }),
   z.object({ type: z.literal('watch'), on: z.boolean() }),
+  z.object({ type: z.literal('model'), id: z.enum(MODELS.map((m) => m.id) as [ModelId, ...ModelId[]]) }),
 ])
 
 ipcMain.handle('jevauto:command', (event, raw: unknown) => {
@@ -61,10 +66,11 @@ ipcMain.handle('jevauto:command', (event, raw: unknown) => {
   if (!parsed.success) return { ok: false, error: 'Unknown command' }
   const command = parsed.data
   if (command.type === 'status') return { ok: true, value: status }
-  if (command.type === 'settings') return { ok: true, value: { watch } }
-  if (command.type === 'watch') {
-    watch = command.on
-    broadcast({ type: 'settings', watch })
+  if (command.type === 'settings') return { ok: true, value: { watch, model, models: availableModels() } }
+  if (command.type === 'watch' || command.type === 'model') {
+    if (command.type === 'watch') watch = command.on
+    else model = command.id
+    broadcast({ type: 'settings', watch, model })
     return { ok: true, value: null }
   }
   if (command.type === 'stop') stopWork()
@@ -221,7 +227,7 @@ async function startTask(task: string) {
   if (stepAside) ui?.activity.hide()
   broadcast({ type: 'status', status: { state: 'working', title: task } })
   try {
-    const r = await supervisor.request<RunOutcome>('agent.run', { task, watch }, { signal: controller.signal })
+    const r = await supervisor.request<RunOutcome>('agent.run', { task, watch, model }, { signal: controller.signal })
     emit(`${r.status}: ${r.summary} (${r.actions} actions, ${r.turns} turns, ${(r.ms / 1000).toFixed(1)} s, $${r.usd.toFixed(3)}) · log ${r.log}`)
   } catch (error) {
     if (!controller.signal.aborted) {

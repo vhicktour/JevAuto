@@ -21,6 +21,8 @@ export type Observation = {
   axText: string
   /** The AX walk timed out, so this observation is the screenshot alone: no elements to gate or type into. */
   axMissing?: boolean
+  /** The address a web tab shows. */
+  url?: string
 }
 
 export class ObserveError extends Error {
@@ -32,7 +34,7 @@ export class ObserveError extends Error {
   }
 }
 
-type WindowState = { window_bounds?: Rect; window_title?: string; code?: string }
+type WindowState = { window_bounds?: Rect; window_title?: string; code?: string; url?: string }
 
 export async function observe(mac: Mac, target: Target, canvas: Size, signal?: AbortSignal): Promise<Observation> {
   const args = { pid: target.pid, window_id: target.windowId }
@@ -74,6 +76,7 @@ export async function observe(mac: Mac, target: Target, canvas: Size, signal?: A
     thumb,
     axText: state.elements.map((e) => `${e.role}|${e.label ?? ''}|${typeof e.value === 'string' ? e.value : ''}`).join('\n'),
     ...(axMissing ? { axMissing } : {}),
+    ...(s.url ? { url: s.url } : {}),
   }
 }
 

@@ -7,7 +7,7 @@ export type Turn = ParsedTurn & { id: string; usage: Usage }
 /** Exactly one result per call, in call order (spec §7 rule 4). A computer call's output is the latest screenshot. */
 export type CallResult =
   | { callId: string; kind: 'computer'; acknowledged?: unknown[] }
-  | { callId: string; kind: 'function'; output: string }
+  | { callId: string; kind: 'function'; name: string; output: string }
 
 /** A provider behind the IR. Tools and instructions are fixed when the adapter is made and never change during a run. */
 export interface Adapter {
@@ -16,5 +16,8 @@ export interface Adapter {
   readonly canvas: Size
   /** `image` is a base64 PNG exactly `canvas` in size. */
   start(input: { task: string; context: string; image?: string }, signal?: AbortSignal): Promise<Turn>
-  next(input: { results: CallResult[]; image?: string; notes: string[] }, signal?: AbortSignal): Promise<Turn>
+  /** `url` is the web page the target shows, when it is one (Gemini asks for it with every result). */
+  next(input: { results: CallResult[]; image?: string; notes: string[]; url?: string }, signal?: AbortSignal): Promise<Turn>
+  /** Cleans up provider-side state when the run ends (Gemini's stored interactions). */
+  close?(): Promise<void>
 }

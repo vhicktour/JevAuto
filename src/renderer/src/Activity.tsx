@@ -21,11 +21,17 @@ export function Activity() {
   const [approval, setApproval] = useState<UiApproval | null>(null)
   const [question, setQuestion] = useState<UiQuestion | null>(null)
   const [watch, setWatch] = useState(true)
+  const [model, setModel] = useState('')
+  const [models, setModels] = useState<{ id: string; label: string }[]>([])
   const list = useRef<HTMLOListElement>(null)
 
   useEffect(() => {
     void command<string[]>({ type: 'status' }).then(setLog)
-    void command<{ watch: boolean }>({ type: 'settings' }).then((s) => setWatch(s.watch))
+    void command<{ watch: boolean; model: string; models: { id: string; label: string }[] }>({ type: 'settings' }).then((s) => {
+      setWatch(s.watch)
+      setModel(s.model)
+      setModels(s.models)
+    })
     return onUiEvent((e) => {
       if (e.type === 'status-line') setLog((l) => [...l.slice(-199), e.line])
       else if (e.type === 'permissions') setAccess({ accessibility: e.accessibility, screenRecording: e.screenRecording })
@@ -43,7 +49,10 @@ export function Activity() {
       else if (e.type === 'approval-closed') setApproval((a) => (a?.id === e.id ? null : a))
       else if (e.type === 'question') setQuestion(e.question)
       else if (e.type === 'question-closed') setQuestion((q) => (q?.id === e.id ? null : q))
-      else if (e.type === 'settings') setWatch(e.watch)
+      else if (e.type === 'settings') {
+        setWatch(e.watch)
+        setModel(e.model)
+      }
     })
   }, [])
   useEffect(() => {
@@ -102,6 +111,15 @@ export function Activity() {
             <i />
             {watch ? 'Watch' : 'Background'}
           </button>
+          {models.length > 1 && (
+            <select className="model-picker" value={model} aria-label="Model" disabled={busy} onChange={(e) => void command({ type: 'model', id: e.target.value })}>
+              {models.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          )}
           <span className="composer-hint">Return runs it · ⌃⌥Space from anywhere</span>
           {busy ? (
             <button type="button" className="button button--stop" onClick={() => void command({ type: 'stop' })}>
