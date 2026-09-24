@@ -58,7 +58,7 @@ SOFTWARE.
 
 ## Cua Driver Node runtime (MPL-2.0)
 
-`cua_driver_node_runtime.node` from `@trycua/cua-driver-darwin-arm64` 0.28.2 is derived from the N-API runtime in `uniffi-bindgen-react-native` 0.31.0-3, copyright its contributors, and licensed under the Mozilla Public License 2.0 (https://www.mozilla.org/MPL/2.0/). Its source is the pinned npm dependency plus `scripts/build-node-runtime.mjs` in https://github.com/trycua/cua at tag `cua-driver-rs-v0.28.2`. JevAuto ships it unmodified apart from thinning to arm64 and re-signing.
+`cua_driver_node_runtime.node` from `@trycua/cua-driver-darwin-arm64` 0.28.2 is derived from the N-API runtime in `uniffi-bindgen-react-native` 0.31.0-3, copyright its contributors, and licensed under the Mozilla Public License 2.0 (https://www.mozilla.org/MPL/2.0/). Its source is the pinned npm dependency plus `scripts/build-node-runtime.mjs` in https://github.com/trycua/cua at tag `cua-driver-rs-v0.28.2`. JevAuto ships it unmodified apart from thinning to arm64 and re-signing, with its notice beside it at `resources/cua-sdk/native/node-runtime-NOTICE.md`.
 
 ## `@ubjs/core` and `@ubjs/node` 0.31.0-3 (MPL-2.0)
 
