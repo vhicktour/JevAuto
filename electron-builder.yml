@@ -1,0 +1,43 @@
+appId: personal.jevauto.desktop
+productName: JevAuto
+# Electron names the userData folder after the packaged package.json's productName.
+extraMetadata:
+  productName: JevAuto
+directories:
+  output: dist
+  buildResources: build
+files:
+  - out/**/*
+  - package.json
+asarUnpack:
+  - '**/*.node'
+  - '**/node_modules/sharp/**'
+  - '**/node_modules/@img/**'
+extraResources:
+  - from: resources/cua-sdk
+    to: cua-sdk
+  - from: native/build/JevNative
+    to: native/JevNative
+  - from: THIRD-PARTY.md
+    to: THIRD-PARTY.md
+mac:
+  category: public.app-category.productivity
+  minimumSystemVersion: '26.0'
+  target:
+    - target: dmg
+      arch: arm64
+    - target: zip
+      arch: arm64
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  notarize: false
+  # Re-sign the staged Cua libraries and JevNative with our identity so library validation loads them.
+  binaries:
+    - Contents/Resources/cua-sdk/native/libcua_driver_sdk.dylib
+    - Contents/Resources/cua-sdk/native/cua_driver_node_runtime.node
+    - Contents/Resources/native/JevNative
+  extendInfo:
+    NSAccessibilityUsageDescription: JevAuto acts in the app windows you ask it to work in.
+    NSScreenCaptureUsageDescription: JevAuto reads the window it is working in so it can see what to do next.

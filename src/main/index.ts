@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, utilityProcess } from 'electron'
 import { join, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Supervisor } from './supervisor'
+import { spikeFromArgv, runSpike } from './spikes'
 import { PROTOCOL_VERSION, type AgentInit } from '../shared/protocol'
 
 const root = dirname(fileURLToPath(import.meta.url))
@@ -68,6 +69,7 @@ export function agentPaths() {
 }
 
 let supervisor: Supervisor | undefined
+let lastInit: AgentInit | undefined
 let shutdownComplete = false
 
 async function startAgent() {
@@ -77,6 +79,7 @@ async function startAgent() {
     ...agentPaths(),
     evidenceDir: join(app.getPath('userData'), 'evidence'),
   }
+  lastInit = init
   supervisor = new Supervisor(
     () => {
       const child = utilityProcess.fork(join(root, 'agent.js'), [], {
@@ -112,7 +115,18 @@ async function startAgent() {
 
 app.whenReady().then(async () => {
   harness = createHarness()
-  await startAgent().catch((error) => emit(`agent failed: ${error instanceof Error ? error.message : error}`))
+  try {
+    await startAgent()
+    await runSpike(spikeFromArgv(process.argv), {
+      supervisor: supervisor!,
+      paths: agentPaths(),
+      evidenceDir: lastInit!.evidenceDir,
+      argv: process.argv,
+      emit,
+    })
+  } catch (error) {
+    emit(`spike failed: ${error instanceof Error ? error.message : error}`)
+  }
 })
 
 app.on('window-all-closed', () => app.quit())
