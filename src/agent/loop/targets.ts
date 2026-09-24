@@ -10,6 +10,16 @@ export type Window = Target & { title: string; bounds?: Rect; z: number }
 /** macOS shows a sandboxed app's Open and Save panels from a separate service process. */
 const PANEL_SERVICE = /open ?and ?save ?panel/i
 const NOT_CONTROLS = new Set(['AXWindow', 'AXMenuBar', 'AXMenuBarItem', 'AXMenu', 'AXMenuItem'])
+/** Names people (and models) use for apps whose real name differs. */
+export const ALIASES: Record<string, string> = {
+  imessage: 'messages',
+  'system preferences': 'system settings',
+  settings: 'system settings',
+  itunes: 'music',
+  'address book': 'contacts',
+  ical: 'calendar',
+  chrome: 'google chrome',
+}
 
 /** Which windows exist, which may be acted in, and how the target follows new windows (spec §4). */
 export class Targets {
@@ -23,11 +33,14 @@ export class Targets {
   constructor(
     private readonly mac: Mac,
     private readonly excluded: string[] = [],
+    /** Cua errors are reported here instead of passing for "no apps" or "no windows". */
+    private readonly onError: (what: string, text: string) => void = () => {},
   ) {}
 
-  /** `list_apps` is slow (~0.9 s), so it runs at start and again only for a pid it has not seen. */
+  /** `list_apps` is slow (~0.9 s), so it runs at start and again only for a pid it has not seen. A failed read keeps the last list. */
   async refreshApps(signal?: AbortSignal) {
     const r = await this.mac.call('list_apps', {}, signal)
+    if (r.isError) return this.onError('list_apps', r.text.slice(0, 300))
     const list = ((r.structured as { apps?: unknown[] })?.apps ?? []) as { pid?: number; bundle_id?: string; name?: string; running?: boolean }[]
     this.apps = list.filter((a) => typeof a.name === 'string').map((a) => ({ pid: a.pid ?? 0, bundleId: a.bundle_id, name: a.name!, running: a.running === true }))
     this.byPid = new Map(this.apps.filter((a) => a.running && a.pid > 0).map((a) => [a.pid, a]))
@@ -41,6 +54,7 @@ export class Targets {
   /** On-screen windows, frontmost first, each with its app's bundle id. */
   async windows(signal?: AbortSignal): Promise<Window[]> {
     const r = await this.mac.call('list_windows', { on_screen_only: true }, signal)
+    if (r.isError) this.onError('list_windows', r.text.slice(0, 300))
     const out: Window[] = []
     for (const w of windowsOf(r.structured)) {
       const b = w.bounds
@@ -87,9 +101,10 @@ export class Targets {
     return now.some((w) => w.windowId === target.windowId) ? undefined : null
   }
 
-  /** Finds an installed app by name: exact first, then prefix, running apps first. */
+  /** Finds an installed app by name: exact first, then prefix, running apps first. Common other names map to the real one. */
   findApp(name: string): AppRecord | undefined {
-    const n = name.trim().toLowerCase().replace(/\.app$/, '')
+    const typed = name.trim().toLowerCase().replace(/\.app$/, '')
+    const n = ALIASES[typed] ?? typed
     const rank = (a: AppRecord) => (a.running ? 0 : 1)
     const sorted = [...this.apps].sort((a, b) => rank(a) - rank(b))
     return sorted.find((a) => a.name.toLowerCase() === n) ?? sorted.find((a) => a.name.toLowerCase().startsWith(n))

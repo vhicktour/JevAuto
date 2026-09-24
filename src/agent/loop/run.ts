@@ -10,7 +10,7 @@ import { elementAt, focusedElement, inForeground, planAction, planType, runPlan,
 import { gate } from './gate'
 import { needsFront } from './keys'
 import { blankCanvas, observe, ObserveError, sameView, type Observation, type Target } from './observe'
-import { describeWindow, Targets, type Window } from './targets'
+import { ALIASES, describeWindow, Targets, type Window } from './targets'
 import { checkUrl } from '../browser/urls'
 import { WEB_APP, WEB_BUNDLE, WEB_PID } from '../browser/web'
 import { ToolInput, type ToolName } from './tools'
@@ -106,7 +106,7 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
   const now = d.now ?? (() => performance.now())
   const started = now()
   const meter = new Meter(d.budget ?? DEFAULT_BUDGET, now)
-  const targets = new Targets(d.mac, d.excluded)
+  const targets = new Targets(d.mac, d.excluded, (what, text) => d.log.write('cua_error', { what, text }))
   const foreground = new Set<number>()
   /** While a turn has the target in front for shortcuts: the window in front and the app to give the front back to. */
   let front: { windowId: number; restorePid?: number } | undefined
@@ -276,7 +276,15 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
       await targets.refreshApps(signal)
       app = targets.findApp(name)
     }
-    if (!app) return { output: { error: `No app called “${name}” is installed.` } }
+    // The app list can come back short or empty (seen once in the app: Messages "not installed"); macOS still knows
+    // the app by name, so launch it that way rather than tell the model it doesn't exist.
+    if (!app) {
+      const known = ALIASES[name.trim().toLowerCase()]
+      const wanted = known ? known.replace(/\b\w/g, (c) => c.toUpperCase()) : name.trim()
+      const why = targets.exclusion({ pid: 0, windowId: 0, app: wanted })
+      if (why) return { output: { error: why } }
+      app = { pid: 0, name: wanted, running: false }
+    }
     const why = targets.exclusion({ pid: app.pid, windowId: 0, app: app.name, bundleId: app.bundleId })
     if (why) return { output: { error: why } }
     const before = await targets.windows(signal)
@@ -287,8 +295,11 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
     }
     const known = new Set(before.map((w) => w.windowId))
     const r = await d.mac.call('launch_app', app.bundleId ? { bundle_id: app.bundleId } : { name: app.name }, signal)
-    if (r.isError) return { output: { error: r.text.slice(0, 300) } }
-    const pid = (r.structured as { pid?: number })?.pid
+    if (r.isError) return { output: { error: app.bundleId ? r.text.slice(0, 300) : `No app called “${name}” is installed.` } }
+    const launched = r.structured as { pid?: number; bundle_id?: string; name?: string }
+    const launchedWhy = targets.exclusion({ pid: launched.pid ?? 0, windowId: 0, app: launched.name ?? app.name, bundleId: launched.bundle_id })
+    if (launchedWhy) return { output: { error: launchedWhy } }
+    const pid = launched.pid
     for (let i = 0; i < 24; i++) {
       const windows = targets.allowed(await targets.windows(signal))
       const w = windows.find((x) => x.pid === pid && !known.has(x.windowId)) ?? windows.find((x) => x.pid === pid)

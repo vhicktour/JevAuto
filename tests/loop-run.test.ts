@@ -445,6 +445,38 @@ test('open_app launches an app in the background and targets its window; exclude
   assert.match((script.nexts[1].results[0] as { output: string }).output, /TextEdit/)
 })
 
+test('open_app still opens an app the app list missed, launching it by name', async () => {
+  const world = new World()
+  world.windows = []
+  world.failures.set('list_apps', fail('list_apps_failed', 'list_apps failed'))
+  const launched: Record<string, unknown>[] = []
+  const orig = world.call.bind(world)
+  world.call = async (name, args) => {
+    if (name === 'launch_app' && args.name === 'Messages') {
+      launched.push(args)
+      world.calls.push({ name, args })
+      world.windows.push({ window_id: 80, pid: 88, app_name: 'Messages', title: 'Messages', bounds: { x: 0, y: 0, width: 700, height: 500 }, z_index: 40, colour: 33 })
+      return ok({ pid: 88, bundle_id: 'com.apple.MobileSMS', name: 'Messages', windows: [] })
+    }
+    return orig(name, args)
+  }
+  const events: string[] = []
+  const script = new Script([{ actions: [{ kind: 'tool', callId: 'f1', name: 'open_app', input: { name: 'iMessage' } }] }, { actions: [done('f2')] }])
+  const { d } = deps(world, script)
+  await runTask({ ...d, log: { write: (event) => void events.push(event) } })
+  assert.deepEqual(launched, [{ name: 'Messages' }])
+  assert.match((script.nexts[0].results[0] as { output: string }).output, /Messages — “Messages”/)
+  assert.ok(events.includes('cua_error'))
+})
+
+test('JevAuto never opens or targets itself, even by name', async () => {
+  const world = new World()
+  const script = new Script([{ actions: [{ kind: 'tool', callId: 'f1', name: 'open_app', input: { name: 'JevAuto Dev' } }] }, { actions: [done('f2')] }])
+  await runTask(deps(world, script).d)
+  assert.ok(!world.calls.some((c) => c.name === 'launch_app'))
+  assert.match((script.nexts[0].results[0] as { output: string }).output, /JevAuto does not control itself/)
+})
+
 test('the action budget stops the run unless you extend it', async () => {
   const world = new World()
   const script = new Script(Array.from({ length: 10 }, (_, i) => ({ actions: [BOLD(`c${i}`)] })))
