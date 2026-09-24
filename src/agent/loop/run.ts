@@ -14,6 +14,7 @@ import { blankCanvas, observe, ObserveError, sameView, type Observation, type Ta
 import { ALIASES, describeWindow, Targets, type Window } from './targets'
 import { checkUrl } from '../browser/urls'
 import { WEB_APP, WEB_BUNDLE, WEB_PID } from '../browser/web'
+import type { ShadowGuess, ShadowPage } from '../jev/shadow'
 import { ToolInput, type ToolName } from './tools'
 
 export type Approval = { kind: 'action' | 'foreground' | 'budget'; title: string; reason: string; app?: string }
@@ -50,6 +51,8 @@ export type RunDeps = {
   web?: { open(url: string, windowId?: number): Promise<{ windowId: number; title: string; url: string }> }
   /** Let open_url reach loopback and private addresses (the eval fixtures). Off by default (spec §5). */
   allowPrivateUrls?: boolean
+  /** Jev in shadow mode on web pages: guesses are logged beside the model's actions, never acted on. */
+  shadow?: { guess(goal: string, page: ShadowPage): Promise<ShadowGuess | undefined> }
 }
 
 const near = (a: number, b: number) => Math.abs(a - b) <= 2
@@ -111,6 +114,8 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
   let snap: { id?: string; elements: ElementInfo[]; probes: number } = { elements: [], probes: 0 }
   let turns = 0
   let stall = 0
+  /** Jev's guess for the page the model is looking at, compared with the model's first action on it. */
+  let shadowGuess: Promise<ShadowGuess | undefined> | undefined
 
   const announce = (state: string, title: string, detail?: string) => d.emit?.('ui.status', { state, title, ...(detail ? { detail } : {}) })
   const finish = (status: RunStatus, summary: string): RunResult => {
@@ -162,6 +167,10 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
       obs = await observe(d.mac, target, adapter.canvas, signal)
       snap = { id: obs.snapshotId, elements: obs.elements, probes: targets.probes }
       target = obs.target
+      shadowGuess =
+        d.shadow && onWeb(target)
+          ? d.shadow.guess(d.task, { url: obs.url ?? '', title: obs.title ?? '', text: obs.text ?? '', controls: obs.elements.map((e) => ({ index: e.element_index, role: e.role, label: e.label ?? '' })) })
+          : undefined
       d.log.write('observe', { window: target.windowId, title: obs.title, capture: obs.frame.capture })
       return undefined
     } catch (error) {
@@ -186,6 +195,16 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
       await new Promise((resolve) => setTimeout(resolve, 300))
     }
     return runPlan(inForeground(plan), d.mac, signal)
+  }
+
+  /** Logs Jev's guess beside the model's first action on the page (spec §6 calibration). Waits at most 1.5 s. */
+  async function compareShadow(a: IrAction, desc: string, element: ElementInfo | undefined) {
+    const pending = shadowGuess
+    shadowGuess = undefined
+    const guess = await Promise.race([pending, new Promise<undefined>((resolve) => setTimeout(resolve, 1500))])
+    if (!guess) return
+    const agree = a.kind === 'click' && guess.operation === 'CLICK' && guess.target?.index !== undefined && guess.target.index === element?.element_index
+    d.log.write('jev_shadow', { jev: guess, model: { action: desc, ...(element ? { element: element.label ?? element.role, index: element.element_index } : {}) }, agree })
   }
 
   /** Gives the front back to the app you were using, once the turn is over. In Watch mode the target keeps it. */
@@ -337,6 +356,7 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
       if (plan.kind === 'cua' && plan.point) element = elementAt(plan.point, obs.elements)
     }
     const desc = describeAction(a, element)
+    if (shadowGuess && ACTING.has(a.kind)) await compareShadow(a, desc, element)
     if (plan.kind === 'error') return { halt: plan.message.replace(/\.$/, '') }
 
     const verdict = gate({ action: a, target: t, element, focus, safety, excluded: d.excluded })

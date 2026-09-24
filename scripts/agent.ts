@@ -72,7 +72,7 @@ function emit(name: string, data: unknown) {
   }
 }
 
-const { mac, web, focus, frontmost, adapter, close } = await localRuntime(root)
+const { mac, web, focus, frontmost, shadow, adapter, close } = await localRuntime(root)
 let model
 try {
   model = adapter(args.model)
@@ -93,6 +93,7 @@ const result = await runTask({
   web,
   focus,
   frontmost,
+  ...(shadow ? { shadow } : {}),
   approve,
   ask,
   log,

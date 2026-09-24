@@ -7,6 +7,7 @@ import { readFocus, readFrontmost } from '../shared/native'
 import { INSTRUCTIONS } from './loop/instructions'
 import { runTask, type Answer } from './loop/run'
 import { RunLog } from './loop/runlog'
+import { jevShadow } from './jev/shadow'
 import { DEVELOPER_APPS } from './loop/targets'
 import { adapterFor } from './providers'
 import { loadStagedCua, MacDriver } from './mac/cua'
@@ -81,6 +82,7 @@ async function agentRun(params: unknown, ctx: HandlerContext) {
       excluded,
       avoid: DEVELOPER_APPS,
       ...(web ? { web } : {}),
+      ...(ctx.init.keys?.typesafe ? { shadow: jevShadow(ctx.init.keys.typesafe) } : {}),
     })
     return { ...result, log: log.path }
   } finally {

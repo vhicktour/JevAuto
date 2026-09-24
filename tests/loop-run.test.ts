@@ -404,6 +404,26 @@ test('typing on a web page asks the page, not the Mac, where focus is', async ()
   assert.equal(world.calls.find((c) => c.name === 'type_text')?.args.element_index, 0)
 })
 
+test('on web pages Jev guesses in the shadow, beside the model, and the log says whether they agreed', async () => {
+  const { world, web } = webWorld()
+  const logged: Record<string, unknown>[] = []
+  const script = new Script([
+    { actions: [{ kind: 'tool', callId: 'f1', name: 'open_url', input: { url: 'https://example.com' } }] },
+    { actions: [click('c1', 2 * (60 - 0), 2 * (120 - 100))] },
+    { actions: [done('f2')] },
+  ])
+  const guesses: string[] = []
+  const { d } = deps(world, script, {
+    web,
+    shadow: { guess: async (goal, p) => (guesses.push(`${goal}|${p.controls.map((c) => c.label).join(',')}`), { operation: 'CLICK', target: { index: 0, label: 'Search' }, confidence: 0.9, ms: 5 }) },
+  })
+  await runTask({ ...d, log: { write: (event, data) => void (event === 'jev_shadow' && logged.push(data ?? {})) } })
+  // One guess per web page the model looks at; only a guess followed by an action is compared and logged.
+  assert.deepEqual([...new Set(guesses)], ['Write the email|Search'])
+  assert.equal(logged.length, 1)
+  assert.deepEqual([logged[0].agree, (logged[0].model as { element?: string }).element], [true, 'Search'])
+})
+
 test('switching the target mid-turn halts the pointer actions that were aimed at the old window', async () => {
   const world = new World()
   world.windows.push({ window_id: 8, pid: 43, app_name: 'Notes', title: 'Groceries', bounds: { x: 0, y: 0, width: 300, height: 300 }, z_index: 5, colour: 50 })

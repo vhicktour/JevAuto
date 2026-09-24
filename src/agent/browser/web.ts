@@ -274,8 +274,9 @@ export class WebDriver {
           images.push({ mimeType: 'image/png', dataBase64: png.toString('base64') })
           size = { width: png.readUInt32BE(16), height: png.readUInt32BE(20) }
         }
+        const text = await page.evaluate(() => document.body?.innerText?.slice(0, 6000) ?? '').catch(() => '')
         return ok(
-          { snapshot_id: snapshotId, window_id: args.window_id, app_name: WEB_APP, window_title: g.title || page.url(), url: page.url(), window_bounds: g.bounds, screenshot_width: size.width, screenshot_height: size.height, elements },
+          { snapshot_id: snapshotId, window_id: args.window_id, app_name: WEB_APP, window_title: g.title || page.url(), url: page.url(), window_bounds: g.bounds, screenshot_width: size.width, screenshot_height: size.height, elements, text },
           images,
         )
       }

@@ -6,6 +6,7 @@ import { readFocus, readFrontmost } from '../../shared/native'
 import { RoutingMac } from '../browser/routing'
 import { WebDriver } from '../browser/web'
 import { INSTRUCTIONS } from './instructions'
+import { jevShadow } from '../jev/shadow'
 
 /** The browser profile the dev app uses too, so sign-ins carry over (one of them at a time: Chrome locks it). */
 export const DEV_BROWSER_PROFILE = join(homedir(), 'Library/Application Support/JevAuto Dev/browser-profile')
@@ -21,6 +22,7 @@ export async function localRuntime(root: string, browserProfile = DEV_BROWSER_PR
     web,
     focus: (pid: number, windowId: number) => (web.isWeb(windowId) ? web.focus(windowId) : readFocus(helper, pid)).catch(() => 'unknown' as const),
     frontmost: () => readFrontmost(helper).catch(() => undefined),
+    shadow: process.env.TYPESAFE_API_KEY ? jevShadow(process.env.TYPESAFE_API_KEY) : undefined,
     adapter: (model: string) =>
       adapterFor(model, INSTRUCTIONS, {
         openai: process.env.OPENAI_API_KEY,
