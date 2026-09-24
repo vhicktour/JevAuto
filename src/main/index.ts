@@ -1,6 +1,8 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, utilityProcess } from 'electron'
 import { join, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { Supervisor } from './supervisor'
+import { PROTOCOL_VERSION, type AgentInit } from '../shared/protocol'
 
 const root = dirname(fileURLToPath(import.meta.url))
 /** The exact renderer entry; privileged IPC is accepted only from this document (onemynd trust-boundary lesson). */
@@ -55,7 +57,70 @@ ipcMain.handle('jevauto:command', (event, command: { type: string }) => {
   return { ok: false, error: `Unknown command ${String(command?.type)}` }
 })
 
-app.whenReady().then(() => {
+
+export function agentPaths() {
+  const base = app.isPackaged ? process.resourcesPath : app.getAppPath()
+  return {
+    cuaSdkPath: join(base, app.isPackaged ? 'cua-sdk/cua-sdk.mjs' : 'resources/cua-sdk/cua-sdk.mjs'),
+    cuaLibraryPath: join(base, app.isPackaged ? 'cua-sdk/native/libcua_driver_sdk.dylib' : 'resources/cua-sdk/native/libcua_driver_sdk.dylib'),
+    nativeHelperPath: join(base, app.isPackaged ? 'native/JevNative' : 'native/build/JevNative'),
+  }
+}
+
+let supervisor: Supervisor | undefined
+let shutdownComplete = false
+
+async function startAgent() {
+  const init: AgentInit = {
+    type: 'init',
+    version: PROTOCOL_VERSION,
+    ...agentPaths(),
+    evidenceDir: join(app.getPath('userData'), 'evidence'),
+  }
+  supervisor = new Supervisor(
+    () => {
+      const child = utilityProcess.fork(join(root, 'agent.js'), [], {
+        serviceName: 'JevAuto Agent',
+        stdio: 'pipe',
+        disclaim: false, // stay in JevAuto's TCC responsibility chain (spec §3)
+        env: {
+          PATH: '/usr/bin:/bin:/usr/sbin:/sbin',
+          HOME: app.getPath('home'),
+          LANG: 'en_US.UTF-8',
+          CUA_DRIVER_RS_TELEMETRY_ENABLED: '0',
+        },
+      })
+      // Drain the pipes so a chatty agent can never block on a full buffer.
+      child.stdout?.on('data', (chunk) => console.log(`[agent] ${String(chunk).trimEnd()}`))
+      child.stderr?.on('data', (chunk) => console.error(`[agent] ${String(chunk).trimEnd()}`))
+      return child
+    },
+    init,
+    {
+      maxRestarts: 3,
+      windowMs: 60_000,
+      backoffMs: 500,
+      readyTimeoutMs: 15_000,
+      onEvent: (name, data) => emit(`agent event ${name}: ${JSON.stringify(data)}`),
+      onGiveUp: (reason) => emit(reason),
+    },
+  )
+  await supervisor.start()
+  const pong = await supervisor.request<{ pid: number }>('ping', {}, { timeoutMs: 5_000 })
+  emit(`agent ready (pid ${pong.pid})`)
+}
+
+app.whenReady().then(async () => {
   harness = createHarness()
+  await startAgent().catch((error) => emit(`agent failed: ${error instanceof Error ? error.message : error}`))
 })
+
 app.on('window-all-closed', () => app.quit())
+app.on('before-quit', (event) => {
+  if (shutdownComplete || !supervisor) return
+  event.preventDefault()
+  void supervisor.stop().finally(() => {
+    shutdownComplete = true
+    app.quit()
+  })
+})
