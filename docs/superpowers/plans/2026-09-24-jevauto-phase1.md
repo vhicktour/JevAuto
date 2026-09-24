@@ -23,3 +23,10 @@
 5. **Terminal runner**: `scripts/agent.ts` (`pnpm agent "task"`): terminal approvals, Ctrl-C stop; a live smoke task.
 6. **App shell (1b)**: agent method `agent.run`; approvals round trip (agent asks, the island shows Allow once / Deny, main answers); ⌃⌥Space command bar window; keys loaded from `.env.local` in dev into Keychain (`safeStorage`) and passed to the agent at fork; failure states in the island.
 7. **Desktop suite**: `evals/desktop/*` (TextEdit, Finder, Notes, Calculator, Reminders, Stickies, Preview, System Settings appearance, Calendar read, Mail draft stops at send), checked from files/AX; `pnpm eval:desktop --repeat 3`; exit ≥ 24/30.
+
+## Phase 2a: one agent for Mac apps and the web (Victor, 2026-09-24: "i want browser and computer use be one")
+
+The spec's per-run Surface choice (Auto / This Mac / Browser) is replaced by one loop that works in both: web tabs in JevAuto's own Chrome are targets like app windows.
+
+8. **Web driver and routing**: `src/agent/browser/web.ts` (`WebDriver`: lazy agent-Chrome launch with the Phase 0 sandboxed options; tabs as windows with ids from 2^30; Cua-shaped results for `get_window_state` (viewport screenshot in device pixels, `window_bounds` = viewport in screen points, DOM elements as AX-like roles, password inputs as `AXSecureTextField`), `click`, `type_text`, `press_key`, `hotkey`, `scroll`, `drag`, `bring_to_front`; focus from `document.activeElement`), `src/agent/browser/routing.ts` (`RoutingMac`: web window ids go to the web driver, everything else to Cua; `list_windows` merges tabs and drops the agent Chrome's own windows), `src/agent/browser/urls.ts` (http/https only, scheme-less → https, private/loopback blocked unless allowed). Tests: `tests/web-urls.test.ts`, `tests/web-routing.test.ts`, `tests/web-driver.test.ts` (headless Chrome against the fixture server).
+9. **Loop wiring**: `open_url` tool; web targets skip the foreground path (CDP keys work in the background); focus takes the window id; instructions name web pages. Tests in `tests/loop-run.test.ts`. Live: a mixed web → TextEdit task from the app in Watch mode.
