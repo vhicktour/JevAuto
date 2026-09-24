@@ -1,10 +1,30 @@
 {
-  "rules": { "no-unused-vars": "error", "eqeqeq": "error" },
+  "ignorePatterns": [
+    "src/agent/browser/snapshot.upstream.js"
+  ],
+  "rules": {
+    "no-unused-vars": "error",
+    "eqeqeq": "error"
+  },
   "overrides": [
     {
-      "files": ["src/agent/**", "src/shared/**", "evals/**"],
+      "files": [
+        "src/agent/**",
+        "src/shared/**",
+        "evals/**"
+      ],
       "rules": {
-        "no-restricted-imports": ["error", { "paths": [{ "name": "electron", "message": "Agent, shared and eval code must run without Electron." }] }]
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "electron",
+                "message": "Agent, shared and eval code must run without Electron."
+              }
+            ]
+          }
+        ]
       }
     }
   ]
