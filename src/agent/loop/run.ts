@@ -6,9 +6,10 @@ import type { Focus } from '../../shared/native'
 import type { Adapter, CallResult, Turn } from './adapter'
 import { DEFAULT_BUDGET, Meter, type Budget, type Limit } from './budget'
 import { describeAction } from './describe'
-import { elementAt, focusedElement, inForeground, planAction, planType, runPlan, type Plan } from './execute'
+import { elementAt, focusedElement, inForeground, planAction, planType, runPlan, type ExecResult, type Plan } from './execute'
 import { gate } from './gate'
-import { blankCanvas, observe, ObserveError, sameFrame, type Observation, type Target } from './observe'
+import { needsFront } from './keys'
+import { blankCanvas, observe, ObserveError, sameView, type Observation, type Target } from './observe'
 import { describeWindow, Targets, type Window } from './targets'
 import { ToolInput, type ToolName } from './tools'
 
@@ -37,6 +38,8 @@ export type RunDeps = {
   front?: boolean
   emit?: (name: string, data: unknown) => void
   now?: () => number
+  /** The app you are using (JevNative), so it comes back to the front after JevAuto borrows it for a shortcut. */
+  frontmost?: () => Promise<{ pid: number } | undefined>
 }
 
 type Call = { callId: string; kind: 'computer' | 'function'; actions: IrAction[] }
@@ -86,6 +89,8 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
   const meter = new Meter(d.budget ?? DEFAULT_BUDGET, now)
   const targets = new Targets(d.mac, d.excluded)
   const foreground = new Set<number>()
+  /** While a turn has the target in front for shortcuts: the window in front and the app to give the front back to. */
+  let front: { windowId: number; restorePid?: number } | undefined
   let target: Target | undefined
   let obs: Observation | undefined
   let snap: { id?: string; elements: ElementInfo[]; probes: number } = { elements: [], probes: 0 }
@@ -152,6 +157,26 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
       await look()
       return `${describeWindow(gone)} closed. The target is now ${describeWindow(fallback)}.`
     }
+  }
+
+  /** Brings the target forward (once per turn) and sends the plan as real key presses (spec §4, after your OK). */
+  async function inFront(t: Target, plan: Plan): Promise<ExecResult> {
+    if (front?.windowId !== t.windowId) {
+      const before = front?.restorePid ?? (await d.frontmost?.().catch(() => undefined))?.pid
+      await d.mac.call('bring_to_front', { pid: t.pid, window_id: t.windowId }, signal)
+      front = { windowId: t.windowId, restorePid: before !== undefined && before !== t.pid ? before : undefined }
+      await new Promise((resolve) => setTimeout(resolve, 300))
+    }
+    return runPlan(inForeground(plan), d.mac, signal)
+  }
+
+  /** Gives the front back to the app you were using, once the turn is over. */
+  async function restoreFront() {
+    const pid = front?.restorePid
+    front = undefined
+    if (pid === undefined) return
+    const w = (await targets.windows(signal)).find((x) => x.pid === pid)
+    if (w) await d.mac.call('bring_to_front', { pid, window_id: w.windowId }, signal)
   }
 
   async function boundsOf(t: Target) {
@@ -288,22 +313,30 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
         return { halt: 'the window changed size since the screenshot; look again', acknowledged }
     }
 
-    let result = await runPlan(plan, d.mac, signal)
-    if (!result.ok && result.code === 'same_pid_keyboard_ambiguity' && (a.kind === 'keys' || a.kind === 'type')) {
+    // Shortcuts never reach a background app, and Cua refuses keys and typing for an app with several windows; both
+    // work with the window in front, which needs your OK (spec §4). Cua's foreground delivery drops ⌘ unless the app
+    // really is frontmost, so the window is brought forward first.
+    const shortcut = a.kind === 'keys' && needsFront(a.keys)
+    let result = shortcut ? undefined : await runPlan(plan, d.mac, signal)
+    const undelivered = !result || (!result.ok && result.code === 'same_pid_keyboard_ambiguity') || result.escalation === 'delivery_failed'
+    // Modifier clicks and some drags are refused in the background (spec §4: "foreground, with your OK").
+    const pointerRefused = POINTER.has(a.kind) && result !== undefined && !result.ok && result.code === 'background_unavailable'
+    if (((a.kind === 'keys' || a.kind === 'type') && undelivered) || pointerRefused) {
       let allowed = foreground.has(t.pid)
       if (!allowed) {
         const answer = await approval({
           kind: 'foreground',
           title: `Bring ${t.app} forward for a moment?`,
-          reason: `${t.app} has another window open, so “${desc}” can only be sent while it is in front. JevAuto brings it forward, sends it, then puts your app back.`,
+          reason: `${pointerRefused ? `This only works in ${t.app}` : `${shortcut ? 'Keyboard shortcuts' : 'Keys'} only reach ${t.app}`} while it is in front, so JevAuto brings it forward to ${desc}, then puts your app back.`,
           app: t.app,
         })
         if (answer === 'run') foreground.add(t.pid)
         allowed = answer !== 'deny'
       }
       if (!allowed) return { halt: `the user did not allow bringing ${t.app} forward, so ${desc} was not run`, acknowledged }
-      result = await runPlan(inForeground(plan), d.mac, signal)
+      result = await inFront(t, plan)
     }
+    if (!result) return { halt: `${desc} was not run`, acknowledged }
     if (ACTING.has(a.kind)) meter.addAction()
     d.log.write('action', { action: desc, app: t.app, ok: result.ok, code: result.code, effect: result.effect })
     if (!result.ok) return { halt: `${desc} failed: ${result.message ?? 'no reason given'}`, acknowledged, acted: false }
@@ -399,11 +432,11 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
       if (!turn.actions.length) return finish('ended', turn.text.join(' ').trim() || 'The model stopped without a summary.')
 
       const before = obs
-      const { results, notes, acted, ended } = await runTurn(turn)
+      const { results, notes, acted, ended } = await runTurn(turn).finally(restoreFront)
       if (ended) return finish(ended.status, ended.summary)
       const moved = await look()
       if (moved) notes.push(moved)
-      if (acted && before && obs && before.target.windowId === obs.target.windowId && sameFrame(before.thumb, obs.thumb)) stall += 1
+      if (acted && before && obs && before.target.windowId === obs.target.windowId && sameView(before, obs)) stall += 1
       else if (acted) stall = 0
       if (stall >= 3) return finish('stall', 'The window stopped changing after three rounds of actions, so JevAuto stopped.')
       if (stall > 0) notes.push('The window looks the same as before your last actions.')

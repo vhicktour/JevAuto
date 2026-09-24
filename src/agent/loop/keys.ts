@@ -57,3 +57,9 @@ export function toCuaKeys(keys: string[]): CuaKeys | { error: string } {
   if (others.length > 1) return { error: 'Press one key per keypress (modifiers are fine). Use the type action for text.' }
   return modifiers.length ? { tool: 'hotkey', keys: [...modifiers, others[0]] } : { tool: 'press_key', key: others[0] }
 }
+
+/** ⌘, ⌃ and ⌥ chords are menu shortcuts: Cua can't deliver them in the background, only with the window in front. */
+export function needsFront(keys: string[]): boolean {
+  const k = toCuaKeys(keys)
+  return !('error' in k) && k.tool === 'hotkey' && k.keys.some((m) => m === 'cmd' || m === 'ctrl' || m === 'option')
+}

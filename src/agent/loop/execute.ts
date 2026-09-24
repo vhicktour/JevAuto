@@ -14,7 +14,8 @@ export type Plan =
   | { kind: 'noop'; note: string }
   | { kind: 'error'; message: string }
 
-export type ExecResult = { ok: boolean; message?: string; code?: string; effect?: string }
+/** `escalation` is Cua's own verdict when it posted input it could not deliver ("delivery_failed"). */
+export type ExecResult = { ok: boolean; message?: string; code?: string; effect?: string; escalation?: string }
 
 /** Model point → pixels of the window capture (Cua's coordinates) and screen points; null on the letterbox padding. */
 function locate(p: IrPoint, space: Space, obs: Observation): { px: Point; screen: Point } | null {
@@ -148,13 +149,15 @@ export async function runPlan(plan: Plan, mac: Mac, signal: AbortSignal): Promis
     return { ok: true }
   }
   let effect: string | undefined
+  let escalation: string | undefined
   for (const call of plan.calls) {
     const r = await mac.call(call.tool, call.args, signal)
-    const s = (r.structured ?? {}) as { code?: string; effect?: string }
+    const s = (r.structured ?? {}) as { code?: string; effect?: string; escalation?: { reason?: string } }
     if (r.isError) return { ok: false, message: r.text.slice(0, 400), code: s.code ?? r.errorCode, effect: s.effect }
     effect = s.effect ?? effect
+    escalation = s.escalation?.reason ?? escalation
   }
-  return { ok: true, effect }
+  return { ok: true, effect, ...(escalation ? { escalation } : {}) }
 }
 
 /** The same calls, delivered by briefly bringing the window forward (spec §4: only after the user's OK). */

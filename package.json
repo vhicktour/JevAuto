@@ -27,6 +27,7 @@
     "spike:c": "node --env-file=.env.local --import tsx evals/spikes/spike-c.ts",
     "spike:d": "node --env-file=.env.local --import tsx evals/spikes/spike-d.ts",
     "agent": "node scripts/build-native.mjs && node --env-file=.env.local --import tsx scripts/agent.ts",
+    "eval:desktop": "node scripts/build-native.mjs && node --env-file=.env.local --import tsx evals/desktop/run.ts",
     "dist": "pnpm build && electron-builder --mac dmg zip --arm64"
   },
   "dependencies": {

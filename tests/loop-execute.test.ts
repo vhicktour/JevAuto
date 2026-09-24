@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import sharp from 'sharp'
-import { observe, sameFrame, ObserveError, type Observation } from '../src/agent/loop/observe'
+import { observe, sameView, ObserveError, type Observation } from '../src/agent/loop/observe'
 import { planAction, planType, elementAt, runPlan, focusedElement } from '../src/agent/loop/execute'
 import type { Mac } from '../src/agent/mac/visible'
 import type { CuaResult } from '../src/agent/mac/cua'
@@ -59,12 +59,37 @@ test('observe reports a closed window as an ObserveError with Cua\'s code', asyn
   await assert.rejects(observe(mac, { pid: 1, windowId: 2, app: 'X' }, { width: 1280, height: 800 }), (e: unknown) => e instanceof ObserveError && e.code === 'window_id_not_found')
 })
 
-test('sameFrame ignores noise but sees a real change', async () => {
-  const a = await observation()
-  const b = await observe(fakeMac(await pngOf(1600, 1000)), a.target, { width: 1280, height: 800 })
-  const c = await observe(fakeMac(await pngOf(1600, 1000, { r: 20, g: 200, b: 20 })), a.target, { width: 1280, height: 800 })
-  assert.equal(sameFrame(a.thumb, b.thumb), true)
-  assert.equal(sameFrame(a.thumb, c.thumb), false)
+async function textPng(width: number, height: number, marks: { x: number; y: number; w: number; h: number }[]) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="white"/>${marks
+    .map((m) => `<rect x="${m.x}" y="${m.y}" width="${m.w}" height="${m.h}" fill="black"/>`)
+    .join('')}</svg>`
+  return (await sharp(Buffer.from(svg)).png().toBuffer()).toString('base64')
+}
+
+async function viewOf(png: string, elements: unknown[] = ELEMENTS) {
+  const mac: Mac = {
+    call: async () =>
+      ok({ snapshot_id: 's', window_bounds: { x: 0, y: 0, width: 556, height: 784 }, screenshot_width: 1112, screenshot_height: 1568, elements }, [{ mimeType: 'image/png', dataBase64: png }]),
+    close: async () => {},
+  }
+  return observe(mac, { pid: 1, windowId: 2, app: 'TextEdit' }, { width: 1280, height: 800 })
+}
+
+test('sameView ignores a blinking caret but sees a line of text turn bold', async () => {
+  const line = { x: 40, y: 60, w: 600, h: 18 }
+  const plain = await viewOf(await textPng(1112, 1568, [line]))
+  const caret = await viewOf(await textPng(1112, 1568, [line, { x: 660, y: 58, w: 2, h: 22 }]))
+  const bold = await viewOf(await textPng(1112, 1568, [{ ...line, y: 58, h: 23 }]))
+  assert.equal(sameView(plain, caret), true)
+  assert.equal(sameView(plain, bold), false)
+})
+
+test('sameView sees a change AX reports even when the pixels match', async () => {
+  const png = await textPng(1112, 1568, [])
+  const a = await viewOf(png)
+  const b = await viewOf(png, ELEMENTS.map((e) => (e.element_index === 3 ? { ...e, value: 'typed' } : e)))
+  assert.equal(sameView(a, a), true)
+  assert.equal(sameView(a, b), false)
 })
 
 type NoCallId = IrAction extends infer A ? (A extends unknown ? Omit<A, 'callId'> : never) : never

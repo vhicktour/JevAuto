@@ -2,14 +2,10 @@ import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createInterface } from 'node:readline/promises'
-import OpenAI from 'openai'
-import { loadStagedCua, MacDriver } from '../src/agent/mac/cua'
 import { VisibleMac } from '../src/agent/mac/visible'
-import { OpenAIAdapter, type OpenAIClient } from '../src/agent/providers/openai/adapter'
-import { INSTRUCTIONS } from '../src/agent/loop/instructions'
+import { localRuntime } from '../src/agent/loop/local'
 import { runTask, type Answer, type Approval } from '../src/agent/loop/run'
 import { RunLog } from '../src/agent/loop/runlog'
-import { readFocus } from '../src/shared/native'
 import { narrate } from '../src/shared/narrate'
 import { UiAct, UiDone, UiStatus } from '../src/shared/ui-events'
 import { answerOf, avoidBundles, parseAgentArgs, type AgentArgs } from './agent-args'
@@ -80,9 +76,7 @@ function emit(name: string, data: unknown) {
   }
 }
 
-const cua = await loadStagedCua(resolve(root, 'resources/cua-sdk/cua-sdk.mjs'), resolve(root, 'resources/cua-sdk/native/libcua_driver_sdk.dylib'))
-const driver = MacDriver.open(cua)
-const helper = resolve(root, 'native/build/JevNative')
+const { driver, focus, frontmost, adapter } = await localRuntime(root)
 const runId = `${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}`
 const log = RunLog.open(join(homedir(), 'Library/Application Support/JevAuto Dev/runs'), runId)
 const { maxActions, maxMs, maxUsd } = args.budget
@@ -90,10 +84,10 @@ console.log(`JevAuto · ${args.model} · up to ${maxActions} actions, ${maxMs / 
 
 const result = await runTask({
   task: args.task,
-  // The SDK's request types lag the computer tool (Spike C), so the adapter takes the narrow client shape it uses.
-  adapter: new OpenAIAdapter(new OpenAI() as unknown as OpenAIClient, args.model, INSTRUCTIONS),
+  adapter: adapter(args.model),
   mac: new VisibleMac(driver, emit),
-  focus: (pid) => readFocus(helper, pid).catch(() => 'unknown' as const),
+  focus,
+  frontmost,
   approve,
   ask,
   log,

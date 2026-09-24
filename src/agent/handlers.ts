@@ -1,14 +1,13 @@
 import { randomUUID } from 'node:crypto'
-import OpenAI from 'openai'
 import { z } from 'zod'
 import type { Handler, HandlerContext } from './agent'
 import type { AgentMethod } from '../shared/protocol'
 import { PHASE0_MODELS } from '../shared/constants'
-import { readFocus } from '../shared/native'
+import { readFocus, readFrontmost } from '../shared/native'
 import { INSTRUCTIONS } from './loop/instructions'
 import { runTask, type Answer } from './loop/run'
 import { RunLog } from './loop/runlog'
-import { OpenAIAdapter, type OpenAIClient } from './providers/openai/adapter'
+import { openAIAdapter } from './providers/openai/adapter'
 import { loadStagedCua, MacDriver } from './mac/cua'
 import { runSpikeA, SpikeAParams, startLongType } from './spikes/spike-a'
 import { spikeBCapture, SpikeBParams } from './spikes/spike-b'
@@ -43,10 +42,10 @@ async function agentRun(params: unknown, ctx: HandlerContext) {
   try {
     const result = await runTask({
       task,
-      // The SDK's request types lag the computer tool (Spike C), so the adapter takes the narrow client shape it uses.
-      adapter: new OpenAIAdapter(new OpenAI({ apiKey }) as unknown as OpenAIClient, PHASE0_MODELS.openai, INSTRUCTIONS),
+      adapter: openAIAdapter(PHASE0_MODELS.openai, INSTRUCTIONS, apiKey),
       mac: await visibleMac(ctx),
       focus: (pid) => readFocus(ctx.init.nativeHelperPath, pid).catch(() => 'unknown' as const),
+      frontmost: () => readFrontmost(ctx.init.nativeHelperPath).catch(() => undefined),
       approve: async (approval): Promise<Answer> => {
         const id = randomUUID()
         ctx.emit('ui.approval', { id, ...approval, offersRun: approval.kind === 'foreground' })

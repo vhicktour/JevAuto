@@ -232,25 +232,78 @@ test('typing goes to the focused element by index; a password field is refused',
 
 test('keys refused for another open window are retried in front only with your OK', async () => {
   const world = new World()
-  let foreground = 0
+  world.failures.set('press_key', fail('same_pid_keyboard_ambiguity'))
   world.after = (call, w) => {
-    if (call.name === 'press_key' && call.args.delivery_mode !== 'foreground') w.failures.set('press_key', fail('same_pid_keyboard_ambiguity'))
-    if (call.name === 'press_key' && call.args.delivery_mode === 'foreground') foreground++
+    if (call.name === 'bring_to_front') w.failures.delete('press_key')
   }
   const script = new Script([{ actions: [{ kind: 'keys', callId: 'c1', keys: ['TAB'] }] }, { actions: [done('f1')] }])
-  const { d, approvals } = deps(world, script, {
-    approve: async (a) => {
-      approvals.push(a)
-      world.failures.delete('press_key')
-      return 'once'
-    },
-  })
-  // The first press is refused by the fake before `after` runs, so arm the refusal up front.
-  world.failures.set('press_key', fail('same_pid_keyboard_ambiguity'))
+  const { d, approvals } = deps(world, script)
   await runTask(d)
-  assert.equal(approvals.length, 1)
-  assert.equal(approvals[0].kind, 'foreground')
-  assert.equal(foreground, 1)
+  assert.deepEqual(approvals.map((a) => a.kind), ['foreground'])
+  const names = world.calls.map((c) => `${c.name}${c.args.delivery_mode ? `:${c.args.delivery_mode}` : ''}`)
+  const fronted = names.indexOf('bring_to_front')
+  assert.ok(fronted >= 0 && fronted < names.indexOf('press_key:foreground'), names.join(' '))
+})
+
+test('a ⌘ shortcut goes straight to the front with your OK; a background attempt would silently fail', async () => {
+  const world = new World()
+  const script = new Script([{ actions: [{ kind: 'keys', callId: 'c1', keys: ['CMD', 'B'] }, { kind: 'keys', callId: 'c1', keys: ['CMD', 'S'] }] }, { actions: [done('f1')] }])
+  const { d, approvals } = deps(world, script, { approve: async (a) => (approvals.push(a), 'run') })
+  await runTask(d)
+  assert.deepEqual(approvals.map((a) => a.kind), ['foreground'])
+  const hotkeys = world.calls.filter((c) => c.name === 'hotkey')
+  assert.deepEqual(hotkeys.map((c) => [c.args.keys, c.args.delivery_mode]), [[['cmd', 'b'], 'foreground'], [['cmd', 's'], 'foreground']])
+})
+
+test('declining the move to the front sends nothing', async () => {
+  const world = new World()
+  const script = new Script([{ actions: [{ kind: 'keys', callId: 'c1', keys: ['CMD', 'B'] }] }, { actions: [done('f1')] }])
+  const { d } = deps(world, script, { approve: async () => 'deny' })
+  await runTask(d)
+  assert.equal(world.calls.filter((c) => c.name === 'hotkey' || c.name === 'bring_to_front').length, 0)
+  assert.match(script.nexts[0].notes.join(' '), /did not allow/)
+})
+
+test('a key Cua reports as not delivered is retried in front', async () => {
+  const world = new World()
+  const orig = world.call.bind(world)
+  world.call = async (name, args) => {
+    const r = await orig(name, args)
+    return name === 'press_key' && args.delivery_mode !== 'foreground' ? { ...r, structured: { effect: 'unverifiable', escalation: { reason: 'delivery_failed' } } } : r
+  }
+  const script = new Script([{ actions: [{ kind: 'keys', callId: 'c1', keys: ['ESC'] }] }, { actions: [done('f1')] }])
+  const { d, approvals } = deps(world, script)
+  await runTask(d)
+  assert.deepEqual(approvals.map((a) => a.kind), ['foreground'])
+  assert.ok(world.calls.some((c) => c.name === 'press_key' && c.args.delivery_mode === 'foreground'))
+})
+
+test('the app you were using comes back to the front once the turn is done', async () => {
+  const world = new World()
+  world.windows.push({ window_id: 99, pid: 1, app_name: 'Terminal', title: 'zsh', bounds: { x: 0, y: 0, width: 800, height: 600 }, z_index: 3, colour: 70 })
+  world.apps.push({ pid: 1, bundle_id: 'com.apple.Terminal', name: 'Terminal', running: true })
+  const script = new Script([{ actions: [{ kind: 'keys', callId: 'c1', keys: ['CMD', 'A'] }, { kind: 'keys', callId: 'c1', keys: ['CMD', 'B'] }] }, { actions: [done('f1')] }])
+  const { d } = deps(world, script, { frontmost: async () => ({ pid: 1 }), avoid: ['com.apple.Terminal'] })
+  await runTask(d)
+  const fronts = world.calls.filter((c) => c.name === 'bring_to_front').map((c) => c.args.pid)
+  assert.deepEqual(fronts, [42, 1])
+})
+
+test('a click or drag Cua cannot do in the background is retried in front with your OK', async () => {
+  const world = new World()
+  const orig = world.call.bind(world)
+  world.call = async (name, args) =>
+    (name === 'click' || name === 'drag') && args.delivery_mode !== 'foreground' ? (world.calls.push({ name, args }), fail('background_unavailable')) : orig(name, args)
+  const shiftClick: IrAction = { kind: 'click', callId: 'c1', x: 2 * (180 - 100), y: 2 * (70 - 50), space: 'pixels', button: 'left', keys: ['SHIFT'] }
+  const drag: IrAction = { kind: 'drag', callId: 'c1', path: [{ x: 300, y: 300 }, { x: 400, y: 400 }], space: 'pixels' }
+  const script = new Script([{ actions: [shiftClick, drag] }, { actions: [done('f1')] }])
+  const { d, approvals } = deps(world, script, { approve: async (a) => (approvals.push(a), 'run') })
+  await runTask(d)
+  assert.deepEqual(approvals.map((a) => a.kind), ['foreground'])
+  assert.deepEqual(
+    world.calls.filter((c) => (c.name === 'click' || c.name === 'drag') && c.args.delivery_mode === 'foreground').map((c) => c.name),
+    ['click', 'drag'],
+  )
 })
 
 test('switching the target mid-turn halts the pointer actions that were aimed at the old window', async () => {

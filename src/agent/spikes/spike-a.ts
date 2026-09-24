@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { z } from 'zod'
 import type { Mac } from '../mac/visible'
-import { windowsOf, windowStateOf, findElement, type WindowInfo, type ElementInfo } from '../mac/results'
+import { windowsOf, windowStateOf, findElement, type WindowInfo, type ElementInfo, trafficLights } from '../mac/results'
 import { readFrontmost, readMouse } from '../../shared/native'
 import { createReport, writeReport, percentile } from '../../shared/report'
 import type { AgentInit } from '../../shared/protocol'
@@ -71,9 +71,7 @@ export function targetTitle(windows: WindowInfo[]): string | undefined {
 
 /** The middle of a window's three traffic lights (close, minimize, zoom); Cua reports no subrole to tell them apart. */
 export function minimizeButton(elements: ElementInfo[]): ElementInfo | undefined {
-  const lights = elements
-    .filter((e) => e.role === 'AXButton' && e.depth === 1 && e.frame && e.frame.width <= 24 && e.frame.height <= 24)
-    .sort((a, b) => a.frame!.x - b.frame!.x)
+  const lights = trafficLights(elements)
   return lights.length === 3 ? lights[1] : undefined
 }
 

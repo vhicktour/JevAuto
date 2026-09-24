@@ -49,6 +49,13 @@ export function windowStateOf(structured: unknown): { snapshotId?: string; eleme
   return { snapshotId: parsed.data.snapshot_id, elements }
 }
 
+/** A window's close, minimise and zoom buttons, left to right (Cua lists them as small top-level AXButtons). */
+export function trafficLights(elements: ElementInfo[]): ElementInfo[] {
+  return elements
+    .filter((e) => e.role === 'AXButton' && e.depth === 1 && e.frame && e.frame.width <= 24 && e.frame.height <= 24)
+    .sort((a, b) => a.frame!.x - b.frame!.x)
+}
+
 export function findElement(elements: ElementInfo[], role: string, labelIncludes?: string): ElementInfo | undefined {
   return elements.find(
     (e) => e.role === role && (labelIncludes === undefined || (e.label ?? '').toLowerCase().includes(labelIncludes.toLowerCase())),

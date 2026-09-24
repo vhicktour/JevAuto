@@ -113,7 +113,7 @@ async function areaValue(mac: Mac, w: WindowInfo, signal: AbortSignal): Promise<
 }
 
 /** Calculator's display is a static text in the tree, not an actionable element, so read it from the markdown. */
-async function calculatorDisplay(mac: Mac, w: WindowInfo, signal: AbortSignal): Promise<string> {
+export async function calculatorDisplay(mac: Mac, w: WindowInfo, signal: AbortSignal): Promise<string> {
   const { raw } = await state(mac, w, signal)
   const markdown = String((raw.structured as { tree_markdown?: string })?.tree_markdown ?? '')
   const match = /AXStaticText[^\n]*?"(-?[\d,.]+)"/.exec(markdown)

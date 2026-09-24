@@ -16,8 +16,9 @@ export type Observation = {
   /** Window bounds in screen points when the capture was taken. */
   bounds: Rect
   title?: string
-  /** A 32×20 grayscale thumbnail for stall detection. */
+  /** A 160×100 grayscale thumbnail and the AX text (roles, labels, values), for stall detection. */
   thumb: Buffer
+  axText: string
 }
 
 export class ObserveError extends Error {
@@ -50,7 +51,7 @@ export async function observe(mac: Mac, target: Target, canvas: Size, signal?: A
       .flatten({ background: { r: 0, g: 0, b: 0 } })
       .png()
       .toBuffer(),
-    sharp(png).resize(32, 20, { fit: 'fill' }).grayscale().raw().toBuffer(),
+    sharp(png).resize(THUMB.width, THUMB.height, { fit: 'fill' }).grayscale().raw().toBuffer(),
   ])
   const state = windowStateOf(r.structured)
   return {
@@ -62,15 +63,21 @@ export async function observe(mac: Mac, target: Target, canvas: Size, signal?: A
     bounds: s.window_bounds,
     title: s.window_title,
     thumb,
+    axText: state.elements.map((e) => `${e.role}|${e.label ?? ''}|${typeof e.value === 'string' ? e.value : ''}`).join('\n'),
   }
 }
 
-/** True when two thumbnails differ by less than a couple of grey levels on average (cursor blinks, antialiasing). */
-export function sameFrame(a: Buffer, b: Buffer): boolean {
-  if (a.length !== b.length) return false
-  let total = 0
-  for (let i = 0; i < a.length; i++) total += Math.abs(a[i] - b[i])
-  return total / a.length < 2
+const THUMB = { width: 160, height: 100 }
+
+/**
+ * True when nothing visible or readable changed: AX reports the same text, and fewer than four thumbnail pixels moved by
+ * more than 24 grey levels. A caret blink stays under that; a line of text turning bold does not.
+ */
+export function sameView(a: Observation, b: Observation): boolean {
+  if (a.axText !== b.axText || a.thumb.length !== b.thumb.length) return false
+  let changed = 0
+  for (let i = 0; i < a.thumb.length; i++) if (Math.abs(a.thumb[i] - b.thumb[i]) > 24 && ++changed > 3) return false
+  return true
 }
 
 let blank: { key: string; png: string } | undefined

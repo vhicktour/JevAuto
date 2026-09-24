@@ -1,3 +1,4 @@
+import OpenAI from 'openai'
 import { CANVAS } from '../../frame/frame'
 import type { Adapter, CallResult, Turn } from '../../loop/adapter'
 import { TOOL_DEFS } from '../../loop/tools'
@@ -69,4 +70,10 @@ export class OpenAIAdapter implements Adapter {
       },
     }
   }
+}
+
+/** An adapter on the real SDK. Without `apiKey` the SDK reads OPENAI_API_KEY (the terminal runner's .env.local). */
+export function openAIAdapter(model: string, instructions: string, apiKey?: string): OpenAIAdapter {
+  // The SDK's request types lag the computer tool (Spike C), so the adapter takes the narrow client shape it uses.
+  return new OpenAIAdapter(new OpenAI(apiKey ? { apiKey } : {}) as unknown as OpenAIClient, model, instructions)
 }
