@@ -518,7 +518,7 @@ test('the action budget stops the run unless you extend it', async () => {
   assert.equal(approvals.at(-1)?.kind, 'budget')
 })
 
-test('three rounds of actions with no visible change end the run as a stall', async () => {
+test('four rounds of actions with no visible change end the run as a stall, with a nudge to try another way first', async () => {
   const world = new World()
   world.after = (call, w) => {
     if (call.name === 'click') w.windows[0].colour = 10 // the click does nothing
@@ -526,8 +526,8 @@ test('three rounds of actions with no visible change end the run as a stall', as
   const script = new Script(Array.from({ length: 10 }, (_, i) => ({ actions: [BOLD(`c${i}`)] })))
   const result = await runTask(deps(world, script).d)
   assert.equal(result.status, 'stall')
-  assert.equal(world.acted().length, 3)
-  assert.match(script.nexts[0].notes.join(' '), /looks the same/)
+  assert.equal(world.acted().length, 4)
+  assert.match(script.nexts[0].notes.join(' '), /looks the same.*menu command, a keyboard shortcut/)
 })
 
 test('Stop mid-batch runs nothing further and reports stopped', async () => {
@@ -866,4 +866,11 @@ test('your keyboard is held while JevAuto borrows the front, and given back when
   assert.ok(on >= 0 && on < events.indexOf('bring_to_front'), events.join(' > '))
   assert.ok(events.indexOf('hotkey') < events.indexOf('guard off'), events.join(' > '))
   assert.equal(events.filter((e) => e === 'guard off').length, 1)
+})
+
+test('a click that lands in a text field says the text cursor is there, so the model types instead of clicking again', async () => {
+  const world = new World()
+  const script = new Script([{ actions: [click('c1', 2 * (300 - 100), 2 * (200 - 50))] }, { actions: [done('f1')] }])
+  await runTask(deps(world, script).d)
+  assert.match(script.nexts[0].notes.join(' '), /text cursor is in it now.*type/i)
 })

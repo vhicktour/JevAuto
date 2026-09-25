@@ -78,7 +78,7 @@ export type RunDeps = {
   reopen?: (bundleId: string) => Promise<void>
   /** Apps the driving brain may run in (Claude Code's terminal or editor): never targets (see GateInput.host). */
   host?: string[]
-  /** End the run when the window stops changing for three rounds (on by default; Claude Code decides that itself). */
+  /** End the run when the window stops changing for four rounds (on by default; Claude Code decides that itself). */
   stall?: boolean
   /**
    * Full auto (your choice in Settings): JevAuto answers its own questions itself, so sends, submits and bringing an
@@ -140,6 +140,9 @@ const CONTROL_ROLES = new Set([
   'AXSearchField', 'AXSecureTextField', 'AXLink', 'AXMenuItem', 'AXMenuBarItem', 'AXTab', 'AXSlider', 'AXIncrementor', 'AXDisclosureTriangle', 'AXCell', 'AXRow',
 ])
 const MAX_CONTROLS = 80
+/** Rounds of actions with nothing visible changing before a run stops (Gemini needed more than three to get going). */
+const STALL_ROUNDS = 4
+const TEXT_FIELDS = new Set(['AXTextArea', 'AXTextField', 'AXSearchField', 'AXComboBox'])
 
 /** The target in words for adapters that use it (View): labelled controls that show in the screenshot. */
 function viewOf(o: Observation): View {
@@ -570,6 +573,10 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
 
     const notes: string[] = []
     if (edited !== undefined) notes.push(`The user changed the text before it was typed; typed instead: “${edited}”.`)
+    // A click into a field in a background window shows no caret, and models then click again and again (seen with
+    // Gemini in TextEdit): say where the text cursor is.
+    if (a.kind === 'click' && element && TEXT_FIELDS.has(element.role))
+      notes.push(`You clicked into ${element.label ? `“${element.label}”` : 'a text field'}; the text cursor is in it now, even if the window stays in the background. Type next.`)
     if (plan.kind === 'noop' && a.kind !== 'screenshot') notes.push(plan.note)
     if (a.kind === 'type' && focus !== 'unknown' && focus?.webArea) notes.push('The app could not confirm the text arrived; check the screenshot.')
     let targetChanged = false
@@ -674,8 +681,9 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
       if (obs?.axMissing) notes.push(`${obs.target.app} did not answer accessibility queries in time, so this screenshot is all JevAuto can see of it.`)
       if (acted && before && obs && before.target.windowId === obs.target.windowId && sameView(before, obs)) stall += 1
       else if (acted) stall = 0
-      if (stall >= 3 && d.stall !== false) return finish('stall', 'The window stopped changing after three rounds of actions, so JevAuto stopped.')
-      if (stall > 0) notes.push('The window looks the same as before your last actions.')
+      if (stall >= STALL_ROUNDS && d.stall !== false) return finish('stall', 'The window stopped changing after four rounds of actions, so JevAuto stopped.')
+      if (stall > 0)
+        notes.push('The window looks the same as before your last actions. Try another way: a menu command, a keyboard shortcut, or a different control.')
       for (const said of d.steer?.() ?? []) notes.push(`The user adds, while you work: “${said}”`)
       const tips = tipsNow()
       if (tips) notes.push(tips)
