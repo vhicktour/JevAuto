@@ -16,8 +16,9 @@ JevAuto's MCP tools (`mcp__jevauto__*`) let you use the Mac's apps and JevAuto's
 
 1. `windows` lists what you can work in (window ids, apps, titles; web pages show as the app "Web"). `open_app` and `open_url` open something new and show it to you.
 2. `look` (optionally with `window`) returns a screenshot and the labelled controls with their centre points. Every x/y you pass afterwards is in pixels of the latest screenshot.
-3. Act with `click`, `type`, `keys`, `scroll`, `drag`, `wait`. Each returns a fresh screenshot unless you pass `screenshot: false`; batch quick steps with `screenshot: false`, then `look`.
+3. Act with `click`, `type`, `keys`, `scroll`, `drag`, `wait`, or batch several with `do` (one call, one screenshot at the end; a failed step stops the rest). Work fast: batch the obvious steps, look only when you need to see.
 4. Check the screenshot after each meaningful step. "Not done" in a result means it did not happen: read why and try another way.
+5. When you get past a wall, save what worked with `learn` (app, one-sentence tip). Tips show up in later sessions when that app is looked at, so JevAuto gets faster every time.
 
 Tips:
 - Click a control's listed centre point rather than guessing from the image.

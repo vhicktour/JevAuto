@@ -13,6 +13,8 @@ export const MCP_INSTRUCTIONS = `JevAuto lets you use this Mac's apps and a web 
 
 - Start with windows or look. Every x/y you pass is in pixels of the latest screenshot you got; each action returns a fresh one unless you pass screenshot: false.
 - look also lists labelled controls with their centre points; clicking those points is the most precise.
+- Be fast: batch obvious steps with do (click, type, keys… then one screenshot) instead of one call per step.
+- When you get past a wall (something failed, then another way worked), save what worked with learn; later sessions see those tips when they look at that app.
 - For websites use open_url (JevAuto's own browser); the user's everyday browsers are off limits.
 - JevAuto refuses some things (password fields, password managers, security prompts, itself, apps the user excluded) and may ask the user before sends, submits or deletes unless they turned on Full auto. Read each result: "Not done" means it did not happen.
 - If the user presses Stop in JevAuto, stop and ask them before continuing.`

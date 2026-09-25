@@ -28,15 +28,31 @@ export type CuaResult = {
 }
 
 export class MacDriver {
-  private constructor(private readonly driver: Sdk.CuaDriverLike) {}
+  private driver: Sdk.CuaDriverLike
+
+  private constructor(private readonly cua: StagedCua) {
+    this.driver = MacDriver.create(cua)
+  }
 
   static open(cua: StagedCua): MacDriver {
-    return new MacDriver(cua.CuaDriver.create(cua.DriverOptions.new({ claudeCodeCompatibility: false })))
+    return new MacDriver(cua)
+  }
+
+  private static create(cua: StagedCua): Sdk.CuaDriverLike {
+    return cua.CuaDriver.create(cua.DriverOptions.new({ claudeCodeCompatibility: false }))
   }
 
   async call(name: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<CuaResult> {
     const started = performance.now()
-    const result = await this.driver.callTool(name, JSON.stringify(args), signal ? { signal } : undefined)
+    let result = await this.driver.callTool(name, JSON.stringify(args), signal ? { signal } : undefined)
+    // Cua ends its implicit session after five idle minutes, then refuses every call ("this session has ended").
+    // Nothing ran, so open a fresh driver session and ask once more.
+    if (result.isError && (result.errorCode === 'session_ended' || /this session has ended/.test(result.text))) {
+      const expired = this.driver
+      this.driver = MacDriver.create(this.cua)
+      void expired.shutdown().catch(() => undefined)
+      result = await this.driver.callTool(name, JSON.stringify(args), signal ? { signal } : undefined)
+    }
     let structured: unknown = undefined
     try {
       structured = result.structuredJson ? JSON.parse(result.structuredJson) : JSON.parse(result.rawJson)

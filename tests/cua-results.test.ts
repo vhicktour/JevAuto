@@ -42,3 +42,28 @@ test("windowStateOf reads Cua 0.28's {x, y, w, h} frames and keeps every parseab
   assert.deepEqual(findElement(state.elements, 'AXButton', 'Add one')?.frame, { x: 602, y: 401, width: 120, height: 49 })
   assert.equal(findElement(state.elements, 'AXTextArea', 'Notes')?.element_index, 4)
 })
+
+test('after five idle minutes Cua ends its session; the next call opens a fresh one and still answers', async () => {
+  const { MacDriver } = await import('../src/agent/mac/cua')
+  const made: { calls: string[] }[] = []
+  const toolResult = (isError: boolean, errorCode?: string) => ({ text: isError ? 'this session has ended; call start_session explicitly to reuse its label' : 'ok', images: [], structuredJson: '{}', rawJson: '{}', isError, errorCode })
+  const cua = {
+    DriverOptions: { new: () => ({}) },
+    CuaDriver: {
+      create: () => {
+        const driver = { calls: [] as string[] }
+        made.push(driver)
+        const expired = made.length === 1
+        return Object.assign(driver, {
+          callTool: async (name: string) => (driver.calls.push(name), expired && name !== 'probe' ? toolResult(true, 'session_ended') : toolResult(false)),
+          shutdown: async () => {},
+        })
+      },
+    },
+  }
+  const mac = MacDriver.open(cua as never)
+  const r = await mac.call('list_windows', {})
+  assert.equal(r.isError, false)
+  assert.equal(made.length, 2, 'a fresh driver session was opened')
+  assert.deepEqual(made.map((d) => d.calls), [['list_windows'], ['list_windows']])
+})
