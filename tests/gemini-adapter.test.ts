@@ -38,6 +38,7 @@ test('every desktop action Gemini can send becomes an IR action on the 0-999 gri
       call('g9', 'navigate', { url: 'example.com' }),
       call('g10', 'list_windows', {}),
       call('g11', 'mouse_down', { x: 1, y: 1 }),
+      call('g12', 'triple_click', { x: 50, y: 60 }),
     ],
   })
   assert.deepEqual(turn.actions, [
@@ -53,6 +54,7 @@ test('every desktop action Gemini can send becomes an IR action on the 0-999 gri
     { kind: 'tool', callId: 'g9', name: 'open_url', input: { url: 'example.com' } },
     { kind: 'tool', callId: 'g10', name: 'list_windows', input: {} },
     { kind: 'other', callId: 'g11', name: 'mouse_down', input: { x: 1, y: 1 } },
+    { kind: 'click', callId: 'g12', x: 50, y: 60, space: 'normalized1000', button: 'left', count: 3 },
   ])
 })
 

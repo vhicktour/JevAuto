@@ -3,7 +3,7 @@ import { emptyTurn, type IrAction, type ParsedTurn } from '../ir'
 type Step = { type: string; id?: string; name?: string; arguments?: Record<string, unknown>; content?: unknown }
 
 /** Gemini's desktop computer-use functions (Interactions API); any other function call is one of our tools. */
-export const GEMINI_ACTIONS = new Set(['click', 'double_click', 'right_click', 'middle_click', 'type', 'scroll', 'drag_and_drop', 'press_key', 'hotkey', 'wait', 'navigate', 'take_screenshot', 'key_down', 'key_up', 'mouse_down', 'mouse_up', 'hover', 'move'])
+export const GEMINI_ACTIONS = new Set(['click', 'double_click', 'triple_click', 'right_click', 'middle_click', 'type', 'scroll', 'drag_and_drop', 'press_key', 'hotkey', 'wait', 'navigate', 'take_screenshot', 'key_down', 'key_up', 'mouse_down', 'mouse_up', 'hover', 'move'])
 
 const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
 
@@ -19,10 +19,11 @@ function toIr(name: string, a: Record<string, unknown>, callId: string): IrActio
   switch (name) {
     case 'click':
     case 'double_click':
+    case 'triple_click':
     case 'right_click':
     case 'middle_click':
       if (!at) return other
-      return [{ kind: 'click', callId, ...at, button: name === 'right_click' ? 'right' : name === 'middle_click' ? 'middle' : 'left', ...(name === 'double_click' ? { count: 2 } : {}) }]
+      return [{ kind: 'click', callId, ...at, button: name === 'right_click' ? 'right' : name === 'middle_click' ? 'middle' : 'left', ...(name === 'double_click' ? { count: 2 } : name === 'triple_click' ? { count: 3 } : {}) }]
     case 'type':
       if (typeof a.text !== 'string') return other
       return [{ kind: 'type', callId, text: a.text }, ...(a.press_enter === true ? [{ kind: 'keys' as const, callId, keys: ['ENTER'] }] : [])]
