@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { UiAct, UiApproval, UiDone, UiQuestion, UiStatus } from '../../shared/ui-events'
 import { CursorGlyph } from './cursor/CursorGlyph'
-import { narrate } from './island-view'
+import { GLYPH, narrate } from './island-view'
 import { command, onUiEvent } from './events'
 import { Settings } from './Settings'
 import type { Speed } from '../../shared/motion'
@@ -9,7 +9,6 @@ import type { Speed } from '../../shared/motion'
 type Row = { act: UiAct; done?: UiDone }
 type Access = { accessibility: boolean; screenRecording: boolean }
 
-const GLYPH: Record<UiAct['verb'], string> = { click: '◉', type: '⌨', drag: '⇢', key: '⌥', set: '✎', menu: '☰', launch: '↗', scroll: '⇅', other: '•' }
 const STATE_LABEL: Record<UiStatus['state'], string> = { idle: 'Ready', working: 'Working', 'needs-you': 'Needs you', error: 'Error', done: 'Done', stopped: 'Stopped' }
 const SPEED_LABEL: Record<Speed, string> = { instant: 'Instant', balanced: 'Balanced', cinematic: 'Cinematic', teach: 'Teach' }
 
@@ -195,7 +194,7 @@ export function Activity() {
             {rows.map(({ act, done }) => (
               <li key={act.id} className={`timeline-row${done ? (done.ok ? ' is-ok' : ' is-failed') : ' is-running'}`}>
                 <span className="timeline-glyph">{GLYPH[act.verb]}</span>
-                <span className="timeline-text">{narrate(act)}</span>
+                <span className="timeline-text">{narrate(act, true)}</span>
                 <span className="timeline-meta">{done ? `${(done.ms / 1000).toFixed(1)} s` : ''}</span>
                 <span className="timeline-state" />
               </li>

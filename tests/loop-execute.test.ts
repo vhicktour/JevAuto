@@ -51,6 +51,13 @@ test('observe letterboxes the window capture onto the run canvas and keeps the F
   assert.equal(obs.title, 'New Message')
 })
 
+test('observe also keeps a small JPEG of the window for the island, at the window\'s own shape', async () => {
+  const obs = await observation()
+  const meta = await sharp(Buffer.from(obs.preview, 'base64')).metadata()
+  assert.equal(meta.format, 'jpeg')
+  assert.deepEqual([meta.width, meta.height], [480, 300])
+})
+
 test('observe reports a closed window as an ObserveError with Cua\'s code', async () => {
   const mac: Mac = {
     call: async () => ({ text: 'window_id_not_found', imageCount: 0, images: [], structured: { code: 'window_id_not_found' }, isError: true, durationMs: 1 }),

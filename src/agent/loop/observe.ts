@@ -18,6 +18,8 @@ export type Observation = {
   title?: string
   /** A 160×100 grayscale thumbnail and the AX text (roles, labels, values), for stall detection. */
   thumb: Buffer
+  /** Base64 JPEG of the window at most 480×300, its shape kept: the island's picture of a target you can't see. */
+  preview: string
   axText: string
   /** The AX walk timed out, so this observation is the screenshot alone: no elements to gate or type into. */
   axMissing?: boolean
@@ -56,7 +58,7 @@ export async function observe(mac: Mac, target: Target, canvas: Size, signal?: A
   if (!meta.width || !meta.height) throw new ObserveError('The window screenshot could not be read.', 'bad_screenshot')
   const frame = makeFrame('window', { width: meta.width, height: meta.height }, s.window_bounds, canvas)
   const { content } = frame.letterbox
-  const [image, thumb] = await Promise.all([
+  const [image, thumb, preview] = await Promise.all([
     sharp(png)
       .resize(content.width, content.height, { fit: 'fill' })
       .extend({ right: canvas.width - content.width, bottom: canvas.height - content.height, background: { r: 0, g: 0, b: 0, alpha: 1 } })
@@ -64,6 +66,7 @@ export async function observe(mac: Mac, target: Target, canvas: Size, signal?: A
       .png()
       .toBuffer(),
     sharp(png).resize(THUMB.width, THUMB.height, { fit: 'fill' }).grayscale().raw().toBuffer(),
+    sharp(png).resize(PREVIEW.width, PREVIEW.height, { fit: 'inside' }).jpeg({ quality: 70 }).toBuffer(),
   ])
   const state = windowStateOf(r.structured)
   return {
@@ -75,6 +78,7 @@ export async function observe(mac: Mac, target: Target, canvas: Size, signal?: A
     bounds: s.window_bounds,
     title: s.window_title,
     thumb,
+    preview: preview.toString('base64'),
     axText: state.elements.map((e) => `${e.role}|${e.label ?? ''}|${typeof e.value === 'string' ? e.value : ''}`).join('\n'),
     ...(axMissing ? { axMissing } : {}),
     ...(s.url ? { url: s.url } : {}),
@@ -83,6 +87,7 @@ export async function observe(mac: Mac, target: Target, canvas: Size, signal?: A
 }
 
 const THUMB = { width: 160, height: 100 }
+const PREVIEW = { width: 480, height: 300 }
 
 /**
  * True when nothing visible or readable changed: AX reports the same text, and fewer than four thumbnail pixels moved by

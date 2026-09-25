@@ -172,6 +172,7 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
           ? d.shadow.guess(d.task, { url: obs.url ?? '', title: obs.title ?? '', text: obs.text ?? '', controls: obs.elements.map((e) => ({ index: e.element_index, role: e.role, label: e.label ?? '' })) })
           : undefined
       d.log.write('observe', { window: target.windowId, title: obs.title, capture: obs.frame.capture })
+      d.emit?.('ui.view', { app: target.app, ...(obs.title ? { title: obs.title } : {}), image: obs.preview })
       return undefined
     } catch (error) {
       if (!(error instanceof ObserveError) || !GONE.has(error.code ?? '')) throw error

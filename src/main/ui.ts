@@ -6,8 +6,11 @@ import type { UiEvent } from '../shared/ui-events'
 export type Load = (window: BrowserWindow, query: Record<string, string>) => void
 type Rect = { x: number; y: number; width: number; height: number }
 
-/** Tall enough for the island at its largest: notch row, narration line and the approval buttons. */
-const ISLAND_PANEL = { width: 560, height: 140 }
+/**
+ * Tall enough for the island at its largest: notch row, narration line, approval buttons, the picture of the target
+ * and six recent steps. Outside the island's shape the panel is click-through.
+ */
+const ISLAND_PANEL = { width: 560, height: 440 }
 
 /**
  * Owns every JevAuto surface (spec §9): the activity window, one click-through overlay per display for the agent

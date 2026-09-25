@@ -8,7 +8,7 @@ import { Supervisor } from './supervisor'
 import { spikeFromArgv, runSpike, type SpikeName } from './spikes'
 import { UiCoordinator } from './ui'
 import { PROTOCOL_VERSION, type AgentInit } from '../shared/protocol'
-import { UiAct, UiApproval, UiDone, UiQuestion, UiStatus, type UiEvent } from '../shared/ui-events'
+import { UiAct, UiApproval, UiDone, UiQuestion, UiStatus, UiView, type UiEvent } from '../shared/ui-events'
 import { keysFromEnvFile } from './keys'
 import { MODELS, type ModelId } from '../shared/models'
 import { SPEEDS } from '../shared/motion'
@@ -150,11 +150,13 @@ function relay(name: string, data: unknown) {
     : name === 'ui.status' ? parsedEvent(UiStatus, data, (status) => ({ type: 'status', status }))
     : name === 'ui.approval' ? parsedEvent(UiApproval, data, (approval) => ({ type: 'approval', approval }))
     : name === 'ui.question' ? parsedEvent(UiQuestion, data, (question) => ({ type: 'question', question }))
+    : name === 'ui.view' ? parsedEvent(UiView, data, (view) => ({ type: 'view', view }))
     : name === 'ui.approval-closed' && closed.success ? { type: 'approval-closed', id: closed.data.id }
     : name === 'ui.question-closed' && closed.success ? { type: 'question-closed', id: closed.data.id }
     : undefined
   if (event) broadcast(event)
-  else emit(`agent event ${name}: ${JSON.stringify(data)}`)
+  // A picture that fails the schema is dropped unseen: screenshots never go into the log (or diagnostics).
+  else emit(name === 'ui.view' ? 'agent event ui.view dropped: not a valid picture' : `agent event ${name}: ${JSON.stringify(data).slice(0, 300)}`)
   // A question needs typing, so the window comes back even if Watch mode moved it aside.
   if (event?.type === 'question' && !ui?.activity.isVisible()) ui?.activity.show()
 }

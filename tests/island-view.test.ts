@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { narrate, reduceIsland, REST } from '../src/renderer/src/island-view'
-import type { UiAct } from '../src/shared/ui-events'
+import { UiView, type UiAct } from '../src/shared/ui-events'
 
 const act = (a: Partial<UiAct>): UiAct => ({ id: 'a1', verb: 'click', visible: true, ...a })
 
@@ -43,4 +43,48 @@ test('an approval shows on the island until it is answered or expires', () => {
   assert.equal(reduceIsland(view, { type: 'approval-closed', id: 'other' }).approval, approval)
   view = reduceIsland(view, { type: 'approval-closed', id: 'p1' })
   assert.equal(view.approval, undefined)
+})
+
+const working = reduceIsland(REST, { type: 'status', status: { state: 'working', title: 'Make it bold' } })
+const shot = { app: 'TextEdit', title: 'Notes.rtf', image: 'aGVsbG8=' }
+
+test('the island keeps the latest picture of the target, and shows it while the cursor cannot', () => {
+  let view = reduceIsland(working, { type: 'view', view: shot })
+  assert.deepEqual(view.preview, shot)
+  assert.equal(view.hidden, undefined)
+  view = reduceIsland(view, { type: 'act', act: act({ id: 'a1', label: 'Bold', app: 'TextEdit', visible: false }) })
+  assert.equal(view.hidden, true)
+  view = reduceIsland(view, { type: 'act', act: act({ id: 'a2', verb: 'key', label: 'cmd+b', visible: false }) })
+  assert.equal(view.hidden, true, 'a key press has no point either way; it keeps the last answer')
+  view = reduceIsland(view, { type: 'act', act: act({ id: 'a3', label: 'Bold', app: 'TextEdit', visible: true }) })
+  assert.equal(view.hidden, false)
+  assert.equal(reduceIsland(view, { type: 'status', status: { state: 'idle', title: '' } }).preview, undefined)
+})
+
+test('the timeline lists the run\'s last six steps in full words, marks each result, and starts over with a new run', () => {
+  let view = working
+  for (let i = 1; i <= 7; i++) view = reduceIsland(view, { type: 'act', act: act({ id: `a${i}`, label: `B${i}`, app: 'TextEdit', visible: i !== 7 }) })
+  assert.deepEqual(view.steps?.map((s) => s.id), ['a2', 'a3', 'a4', 'a5', 'a6', 'a7'])
+  assert.equal(view.steps?.at(-1)?.text, 'Clicking “B7” in TextEdit', 'a hidden step is still named in the timeline')
+  view = reduceIsland(view, { type: 'done', done: { id: 'a6', ok: true, ms: 40 } })
+  view = reduceIsland(view, { type: 'done', done: { id: 'a7', ok: false, ms: 40 } })
+  assert.deepEqual(view.steps?.slice(-2).map((s) => s.ok), [true, false])
+  // Back to working after an approval is the same run; after the run ended it is a new one.
+  view = reduceIsland(view, { type: 'status', status: { state: 'needs-you', title: 'Send?' } })
+  view = reduceIsland(view, { type: 'status', status: { state: 'working', title: 'Make it bold' } })
+  assert.equal(view.steps?.length, 6)
+  view = reduceIsland(view, { type: 'status', status: { state: 'done', title: 'Done' } })
+  assert.equal(view.steps?.length, 6, 'the finished run stays readable')
+  view = reduceIsland(view, { type: 'status', status: { state: 'working', title: 'Next task' } })
+  assert.deepEqual(view.steps, [])
+})
+
+test('narration can name a hidden step in full, for the history', () => {
+  assert.equal(narrate(act({ label: 'Bold', app: 'TextEdit', visible: false }), true), 'Clicking “Bold” in TextEdit')
+})
+
+test('a picture from the agent must be plain base64 of a bounded size', () => {
+  assert.equal(UiView.safeParse(shot).success, true)
+  assert.equal(UiView.safeParse({ ...shot, image: 'aGVsbG8=" onerror="x' }).success, false)
+  assert.equal(UiView.safeParse({ ...shot, image: 'A'.repeat(400_001) }).success, false)
 })

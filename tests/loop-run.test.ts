@@ -573,3 +573,14 @@ test('after you answer an approval, every surface goes back to working', async (
   assert.ok(asked >= 0)
   assert.equal(statuses[asked + 1], 'working')
 })
+
+test('each look shows the target on the island: its app, its title and a small picture of it', async () => {
+  const world = new World()
+  const views: { app: string; title?: string; image: string }[] = []
+  const script = new Script([{ actions: [click('c1', 100, 100)] }, { actions: [done('f1')] }])
+  await runTask(deps(world, script, { emit: (name, data) => name === 'ui.view' && void views.push(data as never) }).d)
+  assert.ok(views.length >= 2, `${views.length} views`)
+  assert.equal(views[0].app, 'Mail')
+  assert.equal(views[0].title, 'New Message')
+  assert.match(views[0].image, /^[A-Za-z0-9+/]+=*$/)
+})

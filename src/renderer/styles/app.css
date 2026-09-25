@@ -958,10 +958,125 @@ body.surface-probe-overlay {
   font-size: 14px;
 }
 .island-line {
+  appearance: none;
+  border: 0;
+  background: none;
+  color: inherit;
+  width: 100%;
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 10px;
   padding: 0 20px 4px;
+}
+.island-line:disabled {
+  color: inherit;
+}
+.island-thumb {
+  flex: none;
+  width: 48px;
+  height: 30px;
+  object-fit: cover;
+  border-radius: 6px;
+  box-shadow: 0 0 0 1px rgba(142, 231, 245, 0.35);
+}
+.island-chevron {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-top: -3px;
+  border-right: 1.5px solid rgba(234, 247, 255, 0.5);
+  border-bottom: 1.5px solid rgba(234, 247, 255, 0.5);
+  transform: rotate(45deg);
+  transition: transform 200ms var(--ease-out);
+}
+.island-chevron.is-open {
+  margin-top: 3px;
+  transform: rotate(-135deg);
+}
+.island-more {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 18px;
+  animation: chip-in 220ms var(--ease-out) both;
+}
+.island-pip {
+  position: relative;
+  flex: none;
+  margin: 0;
+  overflow: hidden;
+  border-radius: 10px;
+  background: #0b1720;
+  box-shadow: 0 0 0 1px rgba(142, 231, 245, 0.3);
+}
+.island-pip img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.island-pip figcaption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 14px 10px 6px;
+  font: 500 11px/1.2 var(--font-body);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: rgba(234, 247, 255, 0.85);
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.75));
+}
+.island-steps {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.island-steps-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: 500 12px/1 var(--font-body);
+  color: rgba(234, 247, 255, 0.6);
+}
+.island-steps-row:last-child {
+  color: var(--color-pearl);
+}
+.island-steps-glyph {
+  flex: none;
+  width: 16px;
+  text-align: center;
+  color: var(--color-cyan);
+}
+.island-steps-text {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.island-steps-state {
+  flex: none;
+  width: 14px;
+  text-align: center;
+}
+.island-steps-row.is-ok .island-steps-state {
+  color: var(--color-cyan);
+}
+.island-steps-row.is-failed .island-steps-state {
+  color: var(--color-coral);
+}
+.island-steps-row.is-running .island-steps-state::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-cyan);
+  animation: pulse 1.2s var(--ease-out) infinite;
 }
 .island-line-text {
   max-width: 100%;
@@ -1038,7 +1153,9 @@ body.surface-probe-overlay {
   .is-running .timeline-state,
   .timeline-row,
   .cursor-chip-caret,
-  .cursor-chip-scroll {
+  .cursor-chip-scroll,
+  .island-more,
+  .island-steps-row.is-running .island-steps-state::before {
     animation: none !important;
   }
 }

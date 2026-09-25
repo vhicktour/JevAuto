@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { CursorGlyph } from './cursor/CursorGlyph'
-import { REST, reduceIsland, type IslandView } from './island-view'
+import { GLYPH, REST, reduceIsland, type IslandView } from './island-view'
 import { command, onUiEvent, reducedMotion } from './events'
 
 const q = new URLSearchParams(location.search)
@@ -11,21 +11,36 @@ const HAS_NOTCH = NOTCH.width > 0
 const EAR = 104
 const LINE = 40
 const ACTIONS = 44
+const PIP = { width: 240, height: 150, gap: 10 }
+const ROW = 22
+const MORE_PAD = 12
 
-function sizeOf(view: IslandView) {
+/** The picture of the target stands in for the cursor while the target is covered, minimised or on another Space. */
+const showsPicture = (view: IslandView) => view.hidden === true && view.preview !== undefined && (view.mode === 'working' || view.mode === 'attention')
+
+function sizeOf(view: IslandView, open: boolean) {
   if (view.mode === 'rest') return HAS_NOTCH ? { width: NOTCH.width, height: NOTCH.height } : { width: 140, height: 32 }
   const width = HAS_NOTCH ? Math.max(NOTCH.width + EAR * 2, view.approval ? 520 : 460) : view.approval ? 480 : 420
-  return { width, height: (HAS_NOTCH ? NOTCH.height : 36) + LINE + (view.approval ? ACTIONS : 0) }
+  const more = open ? (showsPicture(view) ? PIP.height + PIP.gap : 0) + (view.steps?.length ?? 0) * ROW + MORE_PAD : 0
+  return { width, height: (HAS_NOTCH ? NOTCH.height : 36) + LINE + (view.approval ? ACTIONS : 0) + more }
 }
 
 const LINGER: Partial<Record<IslandView['mode'], number>> = { done: 2600, stopped: 1600 }
 
-/** The status island (spec §9): a solid shape that grows out of the notch while the agent works. */
+/**
+ * The status island (spec §9): a solid shape that grows out of the notch while the agent works. While the cursor can't
+ * be shown (the target is covered or on another Space) it shows a small picture of the target instead. Click the
+ * narration to open the run's recent steps and a larger picture.
+ */
 export function Island() {
   const [view, setView] = useState<IslandView>(REST)
+  const [open, setOpen] = useState(false)
   const pill = useRef<HTMLDivElement>(null)
 
   useEffect(() => onUiEvent((e) => setView((v) => reduceIsland(v, e))), [])
+  useEffect(() => {
+    if (view.mode === 'rest') setOpen(false)
+  }, [view.mode])
   useEffect(() => {
     const ms = LINGER[view.mode]
     if (!ms) return
@@ -38,10 +53,13 @@ export function Island() {
     const r = pill.current?.getBoundingClientRect()
     void command({ type: 'island-hit', rect: view.mode === 'rest' || !r ? null : { x: r.x, y: r.y, width: r.width, height: r.height } })
   }
-  useLayoutEffect(report, [view.mode, view.approval?.id])
+  const picture = showsPicture(view)
+  const steps = view.steps ?? []
+  useLayoutEffect(report, [view.mode, view.approval?.id, open, picture, steps.length])
 
-  const size = sizeOf(view)
+  const size = sizeOf(view, open)
   const busy = view.mode === 'working' || view.mode === 'attention'
+  const expandable = steps.length > 0 || picture
   return (
     <div className={`island-stage${HAS_NOTCH ? ' has-notch' : ''}`}>
       <motion.div
@@ -82,12 +100,41 @@ export function Island() {
                   )}
                 </div>
               </div>
-              <div className="island-line" style={{ height: LINE }}>
+              <button
+                type="button"
+                className="island-line"
+                style={{ height: LINE }}
+                aria-expanded={open}
+                aria-label={open ? 'Hide recent steps' : 'Show recent steps'}
+                disabled={!expandable}
+                onClick={() => setOpen((o) => !o)}
+              >
+                {picture && !open && <img className="island-thumb" src={`data:image/jpeg;base64,${view.preview!.image}`} alt="" />}
                 <span className="island-line-text" title={view.approval?.reason}>
                   {view.approval ? view.approval.title : view.mode === 'working' && view.detail ? view.detail : view.detail ? `${view.title} · ${view.detail}` : view.title}
                 </span>
-              </div>
+                {expandable && <i className={`island-chevron${open ? ' is-open' : ''}`} />}
+              </button>
               {view.approval && <IslandActions id={view.approval.id} offersRun={view.approval.offersRun} />}
+              {open && (
+                <div className="island-more" style={{ paddingBottom: MORE_PAD }}>
+                  {picture && (
+                    <figure className="island-pip" style={{ width: PIP.width, height: PIP.height, marginBottom: PIP.gap }}>
+                      <img src={`data:image/jpeg;base64,${view.preview!.image}`} alt={`The ${view.preview!.app} window JevAuto is working in`} />
+                      <figcaption>{view.preview!.title || view.preview!.app}</figcaption>
+                    </figure>
+                  )}
+                  <ol className="island-steps" aria-label="Recent steps">
+                    {steps.map((s) => (
+                      <li key={s.id} className={`island-steps-row${s.ok === undefined ? ' is-running' : s.ok ? ' is-ok' : ' is-failed'}`} style={{ height: ROW }}>
+                        <span className="island-steps-glyph">{GLYPH[s.verb]}</span>
+                        <span className="island-steps-text">{s.text}</span>
+                        <span className="island-steps-state">{s.ok === undefined ? '' : s.ok ? '✓' : '✕'}</span>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              )}
               {view.step && busy && (
                 <div className="island-progress">
                   <span style={{ transform: `scaleX(${view.step.n / view.step.of})` }} />

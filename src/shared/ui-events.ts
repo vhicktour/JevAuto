@@ -54,6 +54,14 @@ export type UiApproval = z.infer<typeof UiApproval>
 export const UiQuestion = z.object({ id: z.string(), question: z.string() })
 export type UiQuestion = z.infer<typeof UiQuestion>
 
+/** A small JPEG of the window the agent works in (base64), for the island while the cursor can't be shown there. */
+export const UiView = z.object({
+  app: z.string().max(200),
+  title: z.string().max(300).optional(),
+  image: z.string().max(400_000).regex(/^[A-Za-z0-9+/]+=*$/),
+})
+export type UiView = z.infer<typeof UiView>
+
 /** Every event a surface can receive, sent on the one `jevauto:event` channel. */
 export const UiEvent = z.discriminatedUnion('type', [
   z.object({ type: z.literal('status-line'), line: z.string() }),
@@ -65,6 +73,7 @@ export const UiEvent = z.discriminatedUnion('type', [
   z.object({ type: z.literal('approval-closed'), id: z.string() }),
   z.object({ type: z.literal('question'), question: UiQuestion }),
   z.object({ type: z.literal('question-closed'), id: z.string() }),
+  z.object({ type: z.literal('view'), view: UiView }),
   /** Watch mode (each target comes to the front so the cursor can be seen working), the model and the cursor speed. */
   z.object({ type: z.literal('settings'), watch: z.boolean(), model: z.string(), speed: z.enum(SPEEDS) }),
 ])
