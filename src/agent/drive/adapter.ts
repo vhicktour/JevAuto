@@ -81,10 +81,16 @@ export class DriveAdapter implements Adapter {
   }
 
   private async nextTurn(signal?: AbortSignal): Promise<Turn> {
+    // Stop may land while the loop was busy (observing, restoring the front): end now, never wait for a call.
+    signal?.throwIfAborted()
     while (!this.queue.length && !this.ended) {
       await new Promise<void>((resolve) => {
-        this.wake = resolve
-        signal?.addEventListener('abort', () => resolve(), { once: true })
+        const stop = () => resolve()
+        this.wake = () => {
+          signal?.removeEventListener('abort', stop)
+          resolve()
+        }
+        signal?.addEventListener('abort', stop, { once: true })
       })
       signal?.throwIfAborted()
     }

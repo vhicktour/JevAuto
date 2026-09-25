@@ -119,3 +119,17 @@ test('while Claude Code drives, the terminal or editor it may run in is off limi
   assert.match(gate(input(type('yes'), { target: terminal, focus: field, host: ['com.apple.Terminal'] })).decision, /refuse/)
   assert.equal(gate(input(type('yes'), { target: terminal, focus: field })).decision, 'allow', 'JevAuto’s own runs may still use it')
 })
+
+test('pasting asks unless JevAuto copied the text itself in this run; the ask is one Full auto must not answer', () => {
+  const paste = gate(input(keys('CMD', 'V'), { target: { app: 'TextEdit', bundleId: 'com.apple.TextEdit' }, focus: field }))
+  assert.equal(paste.decision, 'ask')
+  assert.equal(paste.decision === 'ask' && paste.sensitive, true)
+  assert.equal(gate(input(keys('CMD', 'SHIFT', 'OPTION', 'V'), { target: { app: 'TextEdit', bundleId: 'com.apple.TextEdit' }, focus: field })).decision, 'ask')
+  assert.equal(gate(input(keys('CMD', 'V'), { target: { app: 'TextEdit', bundleId: 'com.apple.TextEdit' }, focus: field, copied: true })).decision, 'allow')
+  const unknown = gate(input(type('hello'), { focus: 'unknown' }))
+  assert.equal(unknown.decision === 'ask' && unknown.sensitive, true, 'typing where JevAuto cannot see the field is also one')
+})
+
+test('a click on a button that submits a form waits for approval, whatever its words', () => {
+  assert.equal(gate(input(click, { element: button('Continue (submits a form)') })).decision, 'ask')
+})

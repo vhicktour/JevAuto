@@ -12,11 +12,12 @@ import { jevShadow } from '../jev/shadow'
 export const DEV_BROWSER_PROFILE = join(homedir(), 'Library/Application Support/JevAuto Dev/browser-profile')
 
 /** What a run from this checkout needs (the `pnpm agent` CLI and the evals): Cua and the agent Chrome behind one driver, JevNative, a model. */
-export async function localRuntime(root: string, browserProfile = DEV_BROWSER_PROFILE) {
+/** `allowPrivate`: JevAuto's browser may reach 127.0.0.1 (only the eval fixtures need it). */
+export async function localRuntime(root: string, browserProfile = DEV_BROWSER_PROFILE, o: { allowPrivate?: boolean } = {}) {
   const cua = await loadStagedCua(resolve(root, 'resources/cua-sdk/cua-sdk.mjs'), resolve(root, 'resources/cua-sdk/native/libcua_driver_sdk.dylib'))
   const helper = resolve(root, 'native/build/JevNative')
   const driver = MacDriver.open(cua)
-  const web = new WebDriver(browserProfile)
+  const web = new WebDriver(browserProfile, undefined, { blockPrivate: !o.allowPrivate })
   return {
     mac: new RoutingMac(driver, web),
     web,

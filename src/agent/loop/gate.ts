@@ -3,7 +3,8 @@ import type { IrAction } from '../providers/ir'
 import type { Focus } from '../../shared/native'
 import { toCuaKeys } from './keys'
 
-export type Verdict = { decision: 'allow' } | { decision: 'ask'; reason: string } | { decision: 'refuse'; reason: string }
+/** `sensitive`: an ask Full auto must not answer for you (it guards your secrets or your clipboard, not a send). */
+export type Verdict = { decision: 'allow' } | { decision: 'ask'; reason: string; sensitive?: boolean } | { decision: 'refuse'; reason: string }
 export type GateTarget = { app: string; bundleId?: string; title?: string }
 export type GateInput = {
   action: IrAction
@@ -18,10 +19,13 @@ export type GateInput = {
   excluded?: string[]
   /** Apps the driving brain may be running in (Claude Code's terminal or editor): never targets while it drives. */
   host?: string[]
+  /** JevAuto copied something itself earlier in this task, so a paste puts back its own text (spec §8 clipboard rule). */
+  copied?: boolean
 }
 
 const allow: Verdict = { decision: 'allow' }
 const ask = (reason: string): Verdict => ({ decision: 'ask', reason })
+const askSensitive = (reason: string): Verdict => ({ decision: 'ask', reason, sensitive: true })
 const refuse = (reason: string): Verdict => ({ decision: 'refuse', reason })
 
 // Spec §4 hard rules. Bundle ids first; app names only when the bundle id is unknown.
@@ -68,7 +72,7 @@ export const isExcluded = (t: GateTarget, excluded: string[] = []) => exclusionR
 
 // Button labels that commit something outside the window: sending, paying, deleting, granting, installing (spec §8).
 const CONSEQUENTIAL =
-  /\b(send|submit|post|publish|tweet|pay|purchase|buy|checkout|check out|place order|order now|subscribe|unsubscribe|donate|transfer|book|reserve|delete|remove|erase|trash|empty|discard|don['’]t save|overwrite|replace|reset|uninstall|install|revoke|deactivate|allow|grant|authori[sz]e|approve|accept|agree|confirm|sign out|log out|shut down|restart)\b/i
+  /\b(send|submits?|post|publish|tweet|pay|purchase|buy|checkout|check out|place order|order now|subscribe|unsubscribe|donate|transfer|book|reserve|delete|remove|erase|trash|empty|discard|don['’]t save|overwrite|replace|reset|uninstall|install|revoke|deactivate|allow|grant|authori[sz]e|approve|accept|agree|confirm|sign out|log out|shut down|restart)\b/i
 const TEXT_ROLES = new Set(['AXTextField', 'AXTextArea', 'AXSearchField', 'AXComboBox', 'AXSecureTextField'])
 const SECRET = /password|passcode|passwort|contraseña|mot de passe|\bpin\b/i
 const SENSITIVE = /card number|credit card|\bcvc\b|\bcvv\b|security code|one[- ]time|verification code|authentication code|two[- ]factor|\b2fa\b/i
@@ -117,7 +121,7 @@ export function gate(i: GateInput): Verdict {
 
   if (a.kind === 'type') {
     if (secure || SECRET.test(fieldName(i.element))) return refuse('That is a password field. JevAuto never types passwords; please type it yourself.')
-    if (focus === undefined || focus === 'unknown' || !focus.ok) return ask('JevAuto cannot tell which field this text will go into.')
+    if (focus === undefined || focus === 'unknown' || !focus.ok) return askSensitive('JevAuto cannot tell which field this text will go into.')
     if (SENSITIVE.test(fieldName(i.element))) return ask(`This field looks like a card or security code (“${i.element?.label}”).`)
     if (/[\r\n]/.test(a.text) && !newLineIsSafe(i.target, focus)) return ask('Typing a new line can submit a form or send a message.')
   }
@@ -131,6 +135,9 @@ export function gate(i: GateInput): Verdict {
       if (key === 'return' && !(mods.every((m) => m === 'shift') && newLineIsSafe(i.target, focus)))
         return ask('Pressing Return can submit a form or send a message.')
       if (mods.includes('cmd') && key === 'delete') return ask('⌘Delete moves items to the Trash or deletes them.')
+      // Your clipboard may hold anything (a password you just copied); a page could read what gets pasted into it.
+      if (mods.includes('cmd') && key === 'v' && !i.copied)
+        return askSensitive('Pasting puts your clipboard into this app. JevAuto pastes without asking only what it copied itself in this task.')
       if (mods.includes('cmd') && key === 'q') return ask('This quits an app or logs you out.')
       if (key === 'd' && mods.length === 2 && mods.includes('cmd') && mods.includes('shift')) return ask('⇧⌘D sends the message in Mail.')
     }

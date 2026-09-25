@@ -77,7 +77,7 @@ function broadcastSettings() {
 function applyKeys() {
   if (!lastInit) return
   lastInit.keys = { ...loadKeys(), ...keys!.all() }
-  if (!run) supervisor?.kill()
+  if (!run && !mcp?.driving) supervisor?.kill() // a new key reaches the agent when nothing is using it
   broadcastSettings()
 }
 
@@ -206,7 +206,7 @@ ipcMain.handle('jevauto:command', async (event, raw: unknown) => {
     return { ok: true, value: null }
   }
   if (command.type === 'install-update') {
-    if (run) return { ok: false, error: 'Finish or stop the task first.' }
+    if (run || mcp?.driving) return { ok: false, error: 'Finish or stop the task first.' }
     return updates?.install() ? { ok: true, value: null } : { ok: false, error: 'No update is ready.' }
   }
   if (command.type === 'stop') stopWork()
@@ -428,6 +428,7 @@ function stopWork() {
   broadcast({ type: 'status', status: { state: 'stopped', title: 'Stopped' } })
   emit('Stop: run cancelled; the agent is killed in 250 ms so queued input stops too.')
   haltAgent()
+  mcp?.ended() // the session dies with the agent, even if it never got to say so
 }
 
 /** Opens or closes Claude Code's socket to match Settings. */
@@ -440,8 +441,8 @@ async function applyMcp() {
       call: async (call) => {
         if (!supervisor) return { ok: false, text: 'JevAuto is still starting. Try again in a moment.' }
         if (run) return { ok: false, text: 'JevAuto is running one of its own tasks. Wait for it to finish, or ask the user to press Stop.' }
-        const { watch, speed, auto, excluded, trusted } = settings!.get()
-        return supervisor.request<DriveResult>('drive.call', { call, settings: { watch, speed, auto, excluded, trusted: trusted.map((t) => t.id) } }, { timeoutMs: 5 * 60_000 })
+        const { speed, auto, excluded, trusted } = settings!.get()
+        return supervisor.request<DriveResult>('drive.call', { call, settings: { speed, auto, excluded, trusted: trusted.map((t) => t.id) } }, { timeoutMs: 5 * 60_000 })
       },
       end: () => void supervisor?.request('drive.end', {}, { timeoutMs: 10_000 }).catch(() => undefined),
       log: emit,

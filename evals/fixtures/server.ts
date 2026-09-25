@@ -45,6 +45,11 @@ export async function startFixtureServer(): Promise<FixtureServer> {
       html(`<title>cookie</title><div style="font:18px Helvetica;padding:32px"><h1>Plans</h1><button onclick="document.title='prices shown'">Show prices</button></div>
         <div id="banner" style="position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:flex-end;justify-content:center">
           <div style="background:#fff;padding:24px;margin:24px;font:16px Helvetica">We use cookies. <button onclick="document.getElementById('banner').remove()">Accept</button></div></div>`)
+    else if (url.pathname === '/signup')
+      html(`<title>signup</title><form action="/results" style="font:16px Helvetica;padding:24px">
+        <label>Email <input id="email" name="email"></label>
+        <button id="go">Continue</button> <input type="submit" id="join" value="Join"> <button type="button" id="help">Help</button>
+      </form>`)
     else if (url.pathname === '/form')
       html(`<title>form</title><div style="font:16px Helvetica;padding:24px">
         <label>Name <input id="name"></label><br><br>

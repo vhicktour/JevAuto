@@ -8,8 +8,11 @@ export type HandlerContext = {
   init: AgentInit
   signal: AbortSignal
   emit(name: string, data: unknown): void
-  /** Waits for your reply to something the handler asked (an approval, a question); undefined on timeout or cancel. */
-  waitReply(id: string, timeoutMs: number): Promise<Reply | undefined>
+  /**
+   * Waits for your reply to something the handler asked (an approval, a question); undefined on timeout, on cancel, or
+   * when `until` aborts (a Claude Code session outlives the request that started it, so it passes its own signal).
+   */
+  waitReply(id: string, timeoutMs: number, until?: AbortSignal): Promise<Reply | undefined>
   /** What you told the running task since the last call, oldest first; each is returned once. */
   takeSteers(): string[]
 }
@@ -70,17 +73,19 @@ export function createAgent(
         signal,
         emit: (name, eventData) => port.postMessage({ type: 'event', name, data: eventData }),
         takeSteers: () => steers.splice(0),
-        waitReply: (id, timeoutMs) =>
+        waitReply: (id, timeoutMs, until) =>
           new Promise<Reply | undefined>((resolve) => {
+            const signals = until ? [signal, until] : [signal]
             const done = (reply?: Reply) => {
               waiting.delete(id)
               clearTimeout(timer)
-              signal.removeEventListener('abort', cancel)
+              for (const s of signals) s.removeEventListener('abort', cancel)
               resolve(reply)
             }
             const cancel = () => done()
             const timer = setTimeout(cancel, timeoutMs)
-            signal.addEventListener('abort', cancel, { once: true })
+            if (signals.some((s) => s.aborted)) return done()
+            for (const s of signals) s.addEventListener('abort', cancel, { once: true })
             waiting.set(id, done)
           }),
       })

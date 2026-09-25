@@ -9,7 +9,7 @@ import { DEFAULT_BUDGET, Meter, type Budget, type Limit } from './budget'
 import { describeAction } from './describe'
 import { elementAt, focusedElement, inForeground, planAction, planType, runPlan, type ExecResult, type Plan } from './execute'
 import { gate } from './gate'
-import { needsFront } from './keys'
+import { needsFront, toCuaKeys } from './keys'
 import { blankCanvas, observe, ObserveError, sameView, type Observation, type Target } from './observe'
 import { ALIASES, describeWindow, Targets, type Window } from './targets'
 import { checkUrl } from '../browser/urls'
@@ -181,6 +181,8 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
   const tipped = new Set<string>()
   /** Releases your keyboard while JevAuto has borrowed the front (see RunDeps.guardKeys). */
   let heldKeys: (() => void) | undefined
+  /** JevAuto copied or cut something itself in this run, so pasting puts back its own text (spec §8). */
+  let copied = false
   let turns = 0
   let stall = 0
   /** Jev's guess for the page the model is looking at, compared with the model's first action on it. */
@@ -377,6 +379,10 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
         return { output: answer === null ? { answer: null, note: 'The user did not answer.' } : { answer } }
       }
       case 'remember': {
+        // A tip is kept only for the app (or site) being worked in, so text on one page can't plant one for Mail.
+        const here = target ? (onWeb(target) ? siteOf(obs?.url) : target.app) : undefined
+        if (!here || String(input.app).trim().toLowerCase() !== here.toLowerCase())
+          return { output: { ok: false, error: `Save tips only for the app you are working in${here ? ` (${here})` : ''}.` } }
         const saved = d.lessons?.add(String(input.app), String(input.tip)) ?? { ok: false, error: 'Tips cannot be saved in this run.' }
         d.log.write('lesson', { app: input.app, tip: input.tip, ok: saved.ok })
         return { output: saved }
@@ -480,9 +486,11 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
     if (shadowGuess && ACTING.has(a.kind)) await compareShadow(a, desc, element)
     if (plan.kind === 'error') return { halt: plan.message.replace(/\.$/, '') }
 
-    const verdict = gate({ action: a, target: t, element, focus, safety, excluded: d.excluded, host: d.host })
+    const verdict = gate({ action: a, target: t, element, focus, safety, excluded: d.excluded, host: d.host, copied })
     d.log.write('gate', { action: desc, ...verdict })
     if (verdict.decision === 'refuse') return { halt: `${desc} was refused: ${verdict.reason}` }
+    if (verdict.decision === 'ask' && verdict.sensitive && d.auto)
+      return { halt: `${desc} was not run: ${verdict.reason} Full auto does not answer this one for you; find another way or ask the user` }
     // Text for a Mac app goes into an element of the target window, or to the app's focus when AX shows that focus is
     // inside the target window. Anything else could land in another of the app's windows (seen live: Cua accepted an
     // AX insert into a different TextEdit document), so nothing is typed.
@@ -534,6 +542,12 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
       // Cua can call typing undelivered when it landed (seen in Messages, where the retry in front then doubled the
       // text): read the field back, and only type again if the text is not there.
       if (a.kind === 'type' && result?.escalation === 'delivery_failed' && element && (await landed(element, a.text))) result = { ...result, escalation: undefined }
+      // The same for a key (a Return that already sent a message must not be pressed twice): if the window changed,
+      // it arrived.
+      if (a.kind === 'keys' && result?.escalation === 'delivery_failed' && obs) {
+        const now = await observe(d.mac, t, adapter.canvas, signal).catch(() => undefined)
+        if (now && !sameView(obs, now)) result = { ...result, escalation: undefined }
+      }
       const undelivered = !result || (!result.ok && result.code === 'same_pid_keyboard_ambiguity') || result.escalation === 'delivery_failed'
       // Modifier clicks and some drags are refused in the background (spec §4: "foreground, with your OK").
       const pointerRefused = POINTER.has(a.kind) && result !== undefined && !result.ok && result.code === 'background_unavailable'
@@ -567,6 +581,10 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
     if (delivered.halt) return { halt: delivered.halt, acknowledged }
     const result = delivered.result
     if (!result) return { halt: `${desc} was not run`, acknowledged }
+    if (a.kind === 'keys' && result.ok) {
+      const k = toCuaKeys(a.keys)
+      if (!('error' in k) && k.tool === 'hotkey' && k.keys.includes('cmd') && ['c', 'x'].includes(k.keys[k.keys.length - 1])) copied = true
+    }
     if (ACTING.has(a.kind)) meter.addAction()
     d.log.write('action', { action: desc, app: t.app, ok: result.ok, code: result.code, effect: result.effect })
     if (!result.ok) return { halt: `${desc} failed: ${result.message ?? 'no reason given'}`, acknowledged, acted: false }

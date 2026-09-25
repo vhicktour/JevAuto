@@ -105,3 +105,15 @@ test('what you tell the running task is handed over once, in order; blank or ove
   const result = out.find((m) => m.type === 'result' && m.id === '8')
   assert.deepEqual(result.value, { first: ['Also make it italic', 'and underline it'], second: [] })
 })
+
+test('a wait for your reply also ends when the signal it is given aborts (a Claude Code session stopped mid-approval)', async () => {
+  const { p, out, send } = port()
+  const session = new AbortController()
+  createAgent(p, { ping: async (_params, ctx) => ({ reply: (await ctx.waitReply('q9', 60_000, session.signal)) ?? 'none' }) })
+  send(init)
+  send({ type: 'request', id: '9', method: 'ping', params: {} })
+  await tick()
+  session.abort()
+  await tick()
+  assert.ok(out.some((m) => m.type === 'result' && m.id === '9' && m.value.reply === 'none'))
+})

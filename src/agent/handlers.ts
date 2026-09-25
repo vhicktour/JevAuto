@@ -76,10 +76,13 @@ const CLAUDE_CODE_HOSTS = [...DEVELOPER_APPS, 'com.anthropic.claudefordesktop']
 const DRIVE_IDLE_MS = 3 * 60_000
 /** No model is paid for, so only actions and time bound a session. */
 const DRIVE_BUDGET: Budget = { maxActions: 2000, maxMs: 2 * 60 * 60_000, maxUsd: 1 }
-const DriveSettings = AgentRun.pick({ watch: true, excluded: true, speed: true, trusted: true, auto: true })
+const DriveSettings = AgentRun.pick({ excluded: true, speed: true, trusted: true, auto: true })
 
-/** The approval and question round trips through main, the island and the activity window. */
-function asker(ctx: HandlerContext) {
+/**
+ * The approval and question round trips through main, the island and the activity window. `until` ends a wait early:
+ * a Claude Code session's approvals must end on Stop even though the request that started the session is long done.
+ */
+function asker(ctx: HandlerContext, until?: AbortSignal) {
   return {
     approve: async (approval: Parameters<Parameters<typeof runTask>[0]['approve']>[0]): Promise<Decision> => {
       const id = randomUUID()
@@ -87,7 +90,7 @@ function asker(ctx: HandlerContext) {
       const editable = text !== undefined && text.length <= EDITABLE_MAX
       const foreground = approval.kind === 'foreground'
       ctx.emit('ui.approval', { id, ...shown, ...(editable ? { text } : {}), offersRun: foreground, offersAlways: foreground && appId !== undefined })
-      const reply = await ctx.waitReply(id, APPROVAL_MS)
+      const reply = await ctx.waitReply(id, APPROVAL_MS, until)
       ctx.emit('ui.approval-closed', { id })
       const answer = reply?.answer ?? 'deny'
       return editable && typeof reply?.text === 'string' ? { answer, text: reply.text } : answer
@@ -95,7 +98,7 @@ function asker(ctx: HandlerContext) {
     ask: async (question: string) => {
       const id = randomUUID()
       ctx.emit('ui.question', { id, question })
-      const reply = await ctx.waitReply(id, QUESTION_MS)
+      const reply = await ctx.waitReply(id, QUESTION_MS, until)
       ctx.emit('ui.question-closed', { id })
       return reply?.text?.trim() || null
     },
@@ -137,7 +140,9 @@ function startSession(settings: z.infer<typeof DriveSettings>, ctx: HandlerConte
   let mac: VisibleMac | undefined
   s.done = (async () => {
     mac = await visibleMac(ctx)
-    mac.pace = settings.watch || settings.speed === 'cinematic' || settings.speed === 'teach'
+    // Claude Code's user is typing in a terminal, so its sessions never pull apps to the front (Watch or not): only
+    // Cinematic and Teach wait for the cursor.
+    mac.pace = settings.speed === 'cinematic' || settings.speed === 'teach'
     mac.speed = settings.speed
     return runTask({
       task: 'Claude Code is driving JevAuto',
@@ -145,11 +150,11 @@ function startSession(settings: z.infer<typeof DriveSettings>, ctx: HandlerConte
       mac,
       focus: (pid, windowId) => (web?.isWeb(windowId) ? web.focus(windowId) : readFocus(ctx.init.nativeHelperPath, pid)).catch(() => 'unknown' as const),
       frontmost: () => readFrontmost(ctx.init.nativeHelperPath).catch(() => undefined),
-      ...asker(ctx),
+      ...asker(ctx, controller.signal),
       log,
       signal: controller.signal,
       emit: ctx.emit,
-      front: settings.watch,
+      front: false,
       excluded: settings.excluded,
       avoid: DEVELOPER_APPS,
       ...(web ? { web } : {}),

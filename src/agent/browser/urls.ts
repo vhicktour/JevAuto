@@ -23,7 +23,18 @@ function privateV6(host: string): boolean {
   if (h === '::1' || h === '::') return true
   if (/^f[cd][0-9a-f]{0,2}:/.test(h) || /^fe[89ab][0-9a-f]?:/.test(h)) return true // unique-local, link-local
   const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(h)
-  return mapped ? privateV4(mapped[1]) : false
+  if (mapped) return privateV4(mapped[1])
+  // The URL parser writes ::ffff:127.0.0.1 as ::ffff:7f00:1, so the mapped address arrives in hex.
+  const hex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(h)
+  if (!hex) return false
+  const [hi, lo] = [parseInt(hex[1], 16), parseInt(hex[2], 16)]
+  return privateV4(`${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`)
+}
+
+/** A host on your own network: loopback, private ranges, link-local, .local names (a trailing dot is the same host). */
+export function privateHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/\.$/, '')
+  return host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || privateV4(host) || privateV6(host)
 }
 
 /**
@@ -44,7 +55,6 @@ export function checkUrl(input: string, o: { allowPrivate?: boolean } = {}): Url
   if (!url.hostname) return { ok: false, reason: `“${raw}” has no host.` }
   if (url.username || url.password) return { ok: false, reason: 'Addresses with a user name or password in them are not opened.' }
   const host = url.hostname.toLowerCase()
-  const local = host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || privateV4(host) || privateV6(host)
-  if (local && !o.allowPrivate) return { ok: false, reason: `${host} is on your own network, which JevAuto does not browse.` }
+  if (privateHost(host) && !o.allowPrivate) return { ok: false, reason: `${host} is on your own network, which JevAuto does not browse.` }
   return { ok: true, url: url.href }
 }

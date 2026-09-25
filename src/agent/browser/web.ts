@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process'
+import { privateHost } from './urls'
 import type { BrowserContext, JSHandle, Page } from 'playwright-core'
 import type { CuaResult } from '../mac/cua'
 import type { Focus } from '../../shared/native'
@@ -44,7 +45,10 @@ function pageScan(mode: 'snapshot' | 'focus') {
             .join(' ')
             .replace(/\s+/g, ' ')
             .trim()
-    return byId || e.getAttribute('aria-label') || labels || own || e.getAttribute('alt') || e.getAttribute('title') || e.getAttribute('placeholder') || ''
+    // An <input> button shows its value as its words ("Join"); a bare submit button says Submit.
+    const inputType = e.tagName === 'INPUT' ? (e.getAttribute('type') ?? '').toLowerCase() : ''
+    const shown = ['submit', 'button', 'reset'].includes(inputType) ? (e as HTMLInputElement).value || (inputType === 'submit' ? 'Submit' : '') : ''
+    return byId || e.getAttribute('aria-label') || labels || own || shown || e.getAttribute('alt') || e.getAttribute('title') || e.getAttribute('placeholder') || ''
   }
   const role = (e: Element): string | null => {
     const r = e.getAttribute('role')
@@ -69,6 +73,9 @@ function pageScan(mode: 'snapshot' | 'focus') {
   const hint = (e: Element) => {
     const auto = (e.getAttribute('autocomplete') ?? '').toLowerCase()
     if (auto.startsWith('cc-')) return ` (credit card ${auto === 'cc-number' ? 'number' : auto.slice(3)})`
+    // A form's submit button sends the form whatever its words ("Continue", "Next"); spec §8 asks before a submit.
+    const type = (e.getAttribute('type') ?? (e.tagName === 'BUTTON' ? 'submit' : '')).toLowerCase()
+    if ((e.tagName === 'BUTTON' || e.tagName === 'INPUT') && (type === 'submit' || type === 'image') && e.closest('form')) return ' (submits a form)'
     return auto === 'one-time-code' ? ' (one-time code)' : ''
   }
   const row = (e: Element) => {
@@ -126,6 +133,11 @@ export class WebDriver {
   constructor(
     private readonly profileDir: string,
     private readonly launch: (profileDir: string) => Promise<BrowserContext> = launchAgentChrome,
+    /**
+     * Refuse every request to your own network (spec §5), not only open_url: redirects, links, scripts and images a
+     * page loads from your router or a local service included. Off only for the eval fixtures on 127.0.0.1.
+     */
+    private readonly o: { blockPrivate?: boolean } = { blockPrivate: true },
   ) {}
 
   get running(): boolean {
@@ -217,6 +229,7 @@ export class WebDriver {
   private async ensure(): Promise<BrowserContext> {
     if (this.context) return this.context
     const context = await this.launch(this.profileDir)
+    if (this.o.blockPrivate !== false) await context.route((url) => privateHost(url.hostname), (route) => route.abort('blockedbyclient'))
     context.on('page', (page) => void this.idOf(page)) // tabs a page opens become windows the target can follow
     context.on('close', () => {
       if (this.context === context) this.context = undefined

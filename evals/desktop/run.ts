@@ -39,7 +39,7 @@ process.on('SIGINT', () => {
   setTimeout(() => process.exit(130), 250).unref()
 })
 
-const { mac: routed, web, focus, frontmost, shadow, adapter, close } = await localRuntime(root)
+const { mac: routed, web, focus, frontmost, shadow, adapter, close } = await localRuntime(root, undefined, { allowPrivate: true })
 const mac = new VisibleMac(routed, () => {})
 const server: FixtureServer | undefined = tasks.some((t) => t.web) ? await startFixtureServer() : undefined
 const site = server ? `http://127.0.0.1:${server.port}` : ''

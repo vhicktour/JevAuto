@@ -15,7 +15,7 @@ let id: number
 before(async () => {
   server = await startFixtureServer()
   const profile = await mkdtemp(join(tmpdir(), 'jevauto-web-test-'))
-  web = new WebDriver(profile, (dir) => chromium.launchPersistentContext(dir, { ...agentChromeOptions(), headless: true }))
+  web = new WebDriver(profile, (dir) => chromium.launchPersistentContext(dir, { ...agentChromeOptions(), headless: true }), { blockPrivate: false }) // the fixtures live on 127.0.0.1
   id = (await web.open(`http://127.0.0.1:${server.port}/form`)).windowId
 })
 after(async () => {
@@ -85,4 +85,23 @@ test('scrolling moves the page, and a link that opens a tab shows up as a new wi
   await web.call('click', { window_id: id, ...px(before.s, more.frame!) })
   for (let i = 0; i < 20 && (await web.windows()).length === windowsBefore; i++) await new Promise((r) => setTimeout(r, 100))
   assert.equal((await web.windows()).length, windowsBefore + 1)
+})
+
+test('JevAuto’s browser refuses every request to your own network, not only open_url', async () => {
+  const profile = await mkdtemp(join(tmpdir(), 'jevauto-web-block-'))
+  const guarded = new WebDriver(profile, (dir) => chromium.launchPersistentContext(dir, { ...agentChromeOptions(), headless: true }), { blockPrivate: true })
+  try {
+    await assert.rejects(guarded.open(`http://127.0.0.1:${server.port}/form`), /ERR_BLOCKED_BY_CLIENT|blocked/i)
+  } finally {
+    await guarded.close()
+  }
+})
+
+test('a button that submits a form says so in its label, so the gate asks before it', async () => {
+  const tab = (await web.open(`http://127.0.0.1:${server.port}/signup`)).windowId
+  const r = await web.call('get_window_state', { pid: 0, window_id: tab })
+  const labels = windowStateOf(r.structured).elements.map((e) => e.label)
+  assert.ok(labels.includes('Continue (submits a form)'), labels.join(' | '))
+  assert.ok(labels.includes('Join (submits a form)'), labels.join(' | '))
+  assert.ok(labels.includes('Help'), labels.join(' | '))
 })

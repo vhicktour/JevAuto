@@ -34,3 +34,12 @@ test('your own network is off limits unless allowed: loopback, private ranges, l
   assert.equal(ok('http://127.0.0.1:8080/page', true), 'http://127.0.0.1:8080/page')
   assert.equal(ok('http://172.32.0.1'), 'http://172.32.0.1/') // just outside 172.16.0.0/12
 })
+
+test('your own network is refused however it is written: IPv4 inside IPv6 in hex, and a trailing dot', () => {
+  refused('http://[::ffff:127.0.0.1]/')
+  refused('http://[::ffff:7f00:1]/')
+  refused('http://[::ffff:c0a8:101]/')
+  refused('http://localhost./')
+  refused('http://10.0.0.1./')
+  ok('http://[::ffff:808:808]/') // 8.8.8.8 is not private
+})
