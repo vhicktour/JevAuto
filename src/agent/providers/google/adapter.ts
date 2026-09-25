@@ -48,26 +48,20 @@ export class GeminiAdapter implements Adapter {
 
   async next(input: { results: CallResult[]; image?: string; notes: string[]; url?: string }, signal?: AbortSignal): Promise<Turn> {
     const url = input.url ?? 'about:blank' // Gemini wants the current address with every result; a Mac window has none
-    const items: Body[] = input.results.map((r) => {
+    const items: Body[] = input.results.flatMap((r): Body[] => {
       const called = this.names.get(r.callId)
       // One of our own functions: its name and what it returned.
-      if (r.kind === 'function' && !(called && GEMINI_ACTIONS.has(called))) return { type: 'function_result', call_id: r.callId, name: r.name, result: r.output }
+      if (r.kind === 'function' && !(called && GEMINI_ACTIONS.has(called))) return [{ type: 'function_result', call_id: r.callId, name: r.name, result: r.output }]
       // A computer-use function (navigate included) must be answered with the screenshot, and it has to come first:
       // the API rejects [text, image] with "requires ... an image ... in the data.inline_data field" (probed live).
       if (!input.image) throw new Error('A computer call must be answered with a screenshot.')
-      const note =
-        r.kind === 'function'
-          ? { url, result: JSON.parse(r.output) as unknown }
-          : { url, ...(r.acknowledged?.length ? { safety_acknowledgement: true } : {}) }
-      return {
-        type: 'function_result',
-        call_id: r.callId,
-        name: called,
-        result: [
-          { type: 'image', data: input.image, mime_type: 'image/png' },
-          { type: 'text', text: JSON.stringify(note) },
-        ],
-      }
+      const shot = { type: 'image', data: input.image, mime_type: 'image/png' }
+      // An acknowledged safety decision is read only from an object result, so the screenshot goes after it as its own
+      // item (probed live: every array form, the documented one included, is rejected with "must be acknowledged").
+      if (r.kind === 'computer' && r.acknowledged?.length)
+        return [{ type: 'function_result', call_id: r.callId, name: called, result: { url, safety_acknowledgement: true } }, shot]
+      const note = r.kind === 'function' ? { url, result: JSON.parse(r.output) as unknown } : { url }
+      return [{ type: 'function_result', call_id: r.callId, name: called, result: [shot, { type: 'text', text: JSON.stringify(note) }] }]
     })
     if (input.notes.length) items.push({ type: 'text', text: input.notes.join('\n') })
     return this.send(items, signal)

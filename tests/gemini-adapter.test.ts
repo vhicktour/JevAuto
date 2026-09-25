@@ -99,7 +99,10 @@ test('results: the screenshot first then the address (the API rejects the other 
   assert.equal(second.system_instruction, first.system_instruction)
   const shot = { type: 'image', data: 'BBB', mime_type: 'image/png' }
   assert.deepEqual(second.input, [
-    { type: 'function_result', call_id: 'g1', name: 'click', result: [shot, { type: 'text', text: JSON.stringify({ url: 'https://example.com/', safety_acknowledgement: true }) }] },
+    // An acknowledged call is read only from an object result; its screenshot follows as its own item (probed live:
+    // an array result with the acknowledgement inside is rejected with "must be acknowledged").
+    { type: 'function_result', call_id: 'g1', name: 'click', result: { url: 'https://example.com/', safety_acknowledgement: true } },
+    shot,
     // Gemini's own navigate is answered like any computer action: with the screenshot, plus what open_url said.
     { type: 'function_result', call_id: 'g2', name: 'navigate', result: [shot, { type: 'text', text: JSON.stringify({ url: 'https://example.com/', result: { ok: true } }) }] },
     { type: 'function_result', call_id: 'f1', name: 'list_windows', result: '{"windows":[]}' },
