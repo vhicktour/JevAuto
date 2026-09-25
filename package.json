@@ -19,6 +19,8 @@
     "dev": "node scripts/tokens.mjs && electron-vite dev",
     "build": "node scripts/tokens.mjs && node scripts/build-native.mjs && node --import tsx scripts/prepare-cua.ts && electron-vite build",
     "typecheck": "tsc --noEmit",
+    "release": "node scripts/release.mjs",
+    "icon": "node scripts/icon.mjs",
     "lint": "oxlint src tests scripts evals",
     "test": "node scripts/build-native.mjs && node scripts/test.mjs",
     "app:dev": "node scripts/app.mjs dev",
@@ -36,6 +38,7 @@
     "@google/genai": "2.24.0",
     "@typesafe-ai/sdk": "0.6.0",
     "electron-liquid-glass": "1.1.1",
+    "electron-updater": "6.8.9",
     "motion": "13.2.0",
     "openai": "7.23.0",
     "playwright-core": "1.63.0",
@@ -45,6 +48,7 @@
     "zod": "4.6.5"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
     "@tailwindcss/vite": "4.3.3",
     "@trycua/cua-driver": "0.28.2",
     "@types/node": "26.6.2",

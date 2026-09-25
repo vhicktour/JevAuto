@@ -6,6 +6,21 @@ extraMetadata:
 directories:
   output: dist
   buildResources: build
+# Release builds update from this repo's GitHub releases (the ZIP and latest-mac.yml; spec §12 Phase 5).
+publish:
+  provider: github
+  owner: vhicktour
+  repo: JevAuto
+  releaseType: release
+# JevAuto holds Accessibility and Screen Recording grants, so no other program may run code as it: no ELECTRON_RUN_AS_NODE,
+# no NODE_OPTIONS, no --inspect, and only the signed app.asar (checked against its hash) is loaded.
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  enableCookieEncryption: true
 files:
   - out/**/*
   - package.json
@@ -21,6 +36,7 @@ extraResources:
   - from: THIRD-PARTY.md
     to: THIRD-PARTY.md
 mac:
+  icon: build/icon.icns
   category: public.app-category.productivity
   minimumSystemVersion: '26.0'
   target:

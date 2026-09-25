@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- JevAuto's icon: the agent cursor on the ink tile (macOS grid: an 824 pt tile inside the 1024 canvas). -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#143441" />
+      <stop offset="1" stop-color="#08121A" />
+    </linearGradient>
+    <radialGradient id="glow" cx="0.48" cy="0.44" r="0.52">
+      <stop offset="0" stop-color="#8EE7F5" stop-opacity="0.34" />
+      <stop offset="1" stop-color="#8EE7F5" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="body" x1="0.15" y1="0" x2="0.85" y2="1">
+      <stop offset="0" stop-color="#F4FBFF" />
+      <stop offset="1" stop-color="#8EE7F5" />
+    </linearGradient>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#tile)" />
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#glow)" />
+  <rect x="101.5" y="101.5" width="821" height="821" rx="183.5" fill="none" stroke="#8EE7F5" stroke-opacity="0.2" stroke-width="3" />
+  <g transform="translate(291 227) scale(15)">
+    <path d="M3 2.6c0-.9 1-1.4 1.7-.8l21.4 17.5c.8.6.4 1.9-.6 2l-9.1.9 5.3 11.2c.4.8 0 1.7-.8 2l-2.7 1.2c-.8.4-1.7 0-2.1-.8l-5-11.2-6.5 5.8c-.7.6-1.6.1-1.6-.8z" fill="url(#body)" stroke="#08121A" stroke-width="1.6" stroke-linejoin="round" />
+    <ellipse cx="9.6" cy="14.6" rx="1.45" ry="2.05" fill="#08121A" />
+    <ellipse cx="13.9" cy="16.9" rx="1.45" ry="2.05" fill="#08121A" />
+    <circle cx="10.05" cy="13.9" r="0.5" fill="#FFFFFF" />
+    <circle cx="14.35" cy="16.2" r="0.5" fill="#FFFFFF" />
+  </g>
+</svg>

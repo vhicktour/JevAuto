@@ -79,6 +79,11 @@ export const UiEvent = z.discriminatedUnion('type', [
   z.object({ type: z.literal('question'), question: UiQuestion }),
   z.object({ type: z.literal('question-closed'), id: z.string() }),
   z.object({ type: z.literal('view'), view: UiView }),
+  /** Release builds only: whether a newer JevAuto is being fetched or is ready to install on restart. */
+  z.object({
+    type: z.literal('update'),
+    update: z.object({ status: z.enum(['off', 'idle', 'checking', 'downloading', 'ready', 'error']), version: z.string().max(50).optional(), error: z.string().max(300).optional() }),
+  }),
   /** Tasks waiting to run after the current one, in order. */
   z.object({ type: z.literal('queue'), tasks: z.array(z.string().max(2000)).max(10) }),
   /** Watch mode (each target comes to the front so the cursor can be seen working), the model, the cursor speed and Full auto. */

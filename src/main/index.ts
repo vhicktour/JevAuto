@@ -15,6 +15,8 @@ import { SPEEDS } from '../shared/motion'
 import { SettingsStore } from './settings'
 import { KEY_NAMES, KeyStore, type KeyName } from './secrets'
 import { readDisplays } from '../shared/native'
+import electronUpdater from 'electron-updater'
+import { Updates, type Updater } from './updates'
 
 const root = dirname(fileURLToPath(import.meta.url))
 /** The exact renderer entry; privileged IPC is accepted only from this document (onemynd trust-boundary lesson). */
@@ -34,13 +36,26 @@ let ui: UiCoordinator | undefined
 let settings: SettingsStore | undefined
 /** Keys you saved in Settings, encrypted with your Keychain; they override .env.local. */
 let keys: KeyStore | undefined
+/** Release builds keep themselves up to date (off in the dev bundle). */
+let updates: Updates | undefined
 /** Only the models whose provider key JevAuto has. */
 const availableModels = () => MODELS.filter((m) => lastInit?.keys?.[m.key]).map((m) => ({ id: m.id, label: m.label }))
 
 function settingsView() {
   const s = settings!.get()
   const set = Object.fromEntries(KEY_NAMES.map((k) => [k, Boolean(lastInit?.keys?.[k])]))
-  return { watch: s.watch, model: s.model, speed: s.speed, auto: s.auto, models: availableModels(), excluded: s.excluded, trusted: s.trusted, keys: set }
+  return {
+    watch: s.watch,
+    model: s.model,
+    speed: s.speed,
+    auto: s.auto,
+    models: availableModels(),
+    excluded: s.excluded,
+    trusted: s.trusted,
+    keys: set,
+    version: app.getVersion(),
+    update: updates?.current ?? { status: 'off' },
+  }
 }
 
 /** Every surface hears Watch mode, the model and the cursor speed whenever one of them changes. */
@@ -104,6 +119,7 @@ const Command = z.discriminatedUnion('type', [
   z.object({ type: z.literal('set-excluded'), apps: z.array(z.string().trim().min(1).max(200)).max(100) }),
   z.object({ type: z.literal('open-privacy'), pane: z.enum(['accessibility', 'screen']) }),
   z.object({ type: z.literal('diagnostics') }),
+  z.object({ type: z.literal('install-update') }),
 ])
 
 ipcMain.handle('jevauto:command', (event, raw: unknown) => {
@@ -160,6 +176,10 @@ ipcMain.handle('jevauto:command', (event, raw: unknown) => {
   if (command.type === 'diagnostics') {
     clipboard.writeText(diagnostics())
     return { ok: true, value: null }
+  }
+  if (command.type === 'install-update') {
+    if (run) return { ok: false, error: 'Finish or stop the task first.' }
+    return updates?.install() ? { ok: true, value: null } : { ok: false, error: 'No update is ready.' }
   }
   if (command.type === 'stop') stopWork()
   else if (command.type === 'run') void startRun(command.spike)
@@ -395,6 +415,14 @@ app.whenReady().then(async () => {
     decrypt: (data) => safeStorage.decryptString(data),
   })
   ui = new UiCoordinator(join(root, '../preload/index.cjs'), load)
+  updates = new Updates({
+    packaged: app.isPackaged,
+    name: app.getName(),
+    updater: () => electronUpdater.autoUpdater as unknown as Updater,
+    onChange: (update) => broadcast({ type: 'update', update }),
+    log: emit,
+  })
+  updates.start()
   // ⌃⌥Space, not ⌥Space: ChatGPT owns that one (spec §9).
   if (!globalShortcut.register('Control+Alt+Space', () => ui?.toggleCommandBar()))
     emit('⌃⌥Space is taken by another app; type tasks in the JevAuto window instead.')

@@ -1,7 +1,17 @@
 import { useEffect, useState } from 'react'
-import { command } from './events'
+import { command, onUiEvent } from './events'
 
-type View = { auto: boolean; excluded: string[]; trusted: { id: string; app: string }[]; keys: Record<string, boolean> }
+type Update = { status: 'off' | 'idle' | 'checking' | 'downloading' | 'ready' | 'error'; version?: string; error?: string }
+type View = { auto: boolean; excluded: string[]; trusted: { id: string; app: string }[]; keys: Record<string, boolean>; version: string; update: Update }
+
+const UPDATE_LINE: Record<Update['status'], (u: Update) => string> = {
+  off: () => 'Updates arrive with signed releases (off in this build).',
+  idle: () => 'Up to date.',
+  checking: () => 'Checking for updates…',
+  downloading: (u) => `Downloading JevAuto ${u.version}…`,
+  ready: (u) => `JevAuto ${u.version} is ready.`,
+  error: () => 'Could not check for updates. JevAuto tries again later.',
+}
 const KEYS: { name: string; label: string; hint: string }[] = [
   { name: 'openai', label: 'OpenAI', hint: 'GPT-6 models' },
   { name: 'google', label: 'Gemini', hint: 'Gemini models' },
@@ -22,6 +32,7 @@ export function Settings({ access }: { access: { accessibility: boolean; screenR
     setExcluded(v.excluded.join('\n'))
   }
   useEffect(() => void command<View>({ type: 'settings' }).then(load), [])
+  useEffect(() => onUiEvent((e) => e.type === 'update' && setView((v) => (v ? { ...v, update: e.update } : v))), [])
   const flash = (text: string) => {
     setNote(text)
     setTimeout(() => setNote(''), 2200)
@@ -140,6 +151,30 @@ export function Settings({ access }: { access: { accessibility: boolean; screenR
             {access?.screenRecording ? 'Screen Recording ✓' : 'Allow Screen Recording…'}
           </button>
         </div>
+      </section>
+
+      <section className="card">
+        <h2>About</h2>
+        <p className="settings-hint">
+          JevAuto {view.version} · {UPDATE_LINE[view.update.status](view.update)}
+        </p>
+        {view.update.status === 'ready' && (
+          <div className="settings-actions settings-actions--start">
+            <button
+              type="button"
+              className="button button--primary"
+              onClick={async () => {
+                const ok = await command({ type: 'install-update' }).then(
+                  () => true,
+                  () => false,
+                )
+                if (!ok) flash('Finish or stop the task first.')
+              }}
+            >
+              Restart to update
+            </button>
+          </div>
+        )}
       </section>
 
       <section className="card">
