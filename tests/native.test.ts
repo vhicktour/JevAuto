@@ -62,3 +62,25 @@ test('a display without a notch at x = -1920 gets a top-centre pill under the me
 test('the overlay covers the whole display frame, negative origin included', () => {
   assert.deepEqual(overlayRect(leftLg), { x: -1920, y: 0, width: 1920, height: 1080 })
 })
+
+test('the keyboard hold starts before JevAuto acts and ends when released; a helper that cannot hold is a no-op', async () => {
+  const { guardKeys } = await import('../src/shared/native')
+  const { mkdtempSync, writeFileSync, chmodSync, existsSync } = await import('node:fs')
+  const { join } = await import('node:path')
+  const { tmpdir } = await import('node:os')
+  const dir = mkdtempSync(join(tmpdir(), 'jevauto-guard-'))
+  // Stands in for JevNative guard-keys (the real one would hold this Mac's keyboard during the test).
+  const helper = join(dir, 'helper')
+  writeFileSync(helper, `#!/bin/bash\n[ "$1" = guard-keys ] || exit 64\necho '{"ok":true}'\ncat > /dev/null\ntouch ${join(dir, 'released')}\n`)
+  chmodSync(helper, 0o755)
+  const release = await guardKeys(helper)
+  assert.equal(existsSync(join(dir, 'released')), false, 'held until released')
+  release()
+  await new Promise((r) => setTimeout(r, 300))
+  assert.equal(existsSync(join(dir, 'released')), true)
+  const refused = join(dir, 'refused')
+  writeFileSync(refused, `#!/bin/bash\necho '{"ok":false}'\nexit 1\n`)
+  chmodSync(refused, 0o755)
+  const noop = await guardKeys(refused)
+  assert.doesNotThrow(() => noop())
+})

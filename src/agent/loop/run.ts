@@ -69,6 +69,11 @@ export type RunDeps = {
   steer?: () => string[]
   /** What earlier runs learned about apps and sites: shown once per app per run, and added to with remember. */
   lessons?: { for(app: string): string[]; add(app: string, tip: string): { ok: boolean; error?: string } }
+  /**
+   * Holds your keyboard (keys typed on it are dropped; JevAuto's own pass) and returns the release. Used while JevAuto
+   * borrows the front, so what you type then can't land in the app it works in (a stray Return once sent a message).
+   */
+  guardKeys?: () => Promise<() => void>
   /** Asks a running app with no window to show one, without bringing it forward (`open -g -b`). */
   reopen?: (bundleId: string) => Promise<void>
   /** Apps the driving brain may run in (Claude Code's terminal or editor): never targets (see GateInput.host). */
@@ -171,6 +176,8 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
   let snap: { id?: string; elements: ElementInfo[]; probes: number } = { elements: [], probes: 0 }
   /** Apps (and sites) whose tips this run has already shown. */
   const tipped = new Set<string>()
+  /** Releases your keyboard while JevAuto has borrowed the front (see RunDeps.guardKeys). */
+  let heldKeys: (() => void) | undefined
   let turns = 0
   let stall = 0
   /** Jev's guess for the page the model is looking at, compared with the model's first action on it. */
@@ -275,6 +282,7 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
   async function inFront(t: Target, plan: Plan): Promise<ExecResult> {
     if (front?.windowId !== t.windowId) {
       const before = d.front ? undefined : (front?.restorePid ?? (await d.frontmost?.().catch(() => undefined))?.pid)
+      if (!d.front && !heldKeys) heldKeys = await d.guardKeys?.().catch(() => undefined)
       await d.mac.call('bring_to_front', { pid: t.pid, window_id: t.windowId }, signal)
       front = { windowId: t.windowId, restorePid: before !== undefined && before !== t.pid ? before : undefined }
       await new Promise((resolve) => setTimeout(resolve, 300))
@@ -294,12 +302,17 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
 
   /** Gives the front back to the app you were using, once the turn is over. In Watch mode the target keeps it. */
   async function restoreFront() {
-    if (d.front) return
-    const pid = front?.restorePid
-    front = undefined
-    if (pid === undefined) return
-    const w = (await targets.windows(signal)).find((x) => x.pid === pid)
-    if (w) await d.mac.call('bring_to_front', { pid, window_id: w.windowId }, signal)
+    try {
+      if (d.front) return
+      const pid = front?.restorePid
+      front = undefined
+      if (pid === undefined) return
+      const w = (await targets.windows(signal)).find((x) => x.pid === pid)
+      if (w) await d.mac.call('bring_to_front', { pid, window_id: w.windowId }, signal)
+    } finally {
+      heldKeys?.() // your keyboard comes back once your app is in front again
+      heldKeys = undefined
+    }
   }
 
   async function boundsOf(t: Target) {
@@ -512,14 +525,16 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
     // work with the window in front, which needs your OK (spec §4). Cua's foreground delivery drops ⌘ unless the app
     // really is frontmost, so the window is brought forward first.
     const shortcut = a.kind === 'keys' && !onWeb(t) && needsFront(a.keys)
-    let result = shortcut ? undefined : await runPlan(plan, d.mac, signal)
-    // Cua can call typing undelivered when it landed (seen in Messages, where the retry in front then doubled the text):
-    // read the field back, and only type again if the text is not there.
-    if (a.kind === 'type' && result?.escalation === 'delivery_failed' && element && (await landed(element, a.text))) result = { ...result, escalation: undefined }
-    const undelivered = !result || (!result.ok && result.code === 'same_pid_keyboard_ambiguity') || result.escalation === 'delivery_failed'
-    // Modifier clicks and some drags are refused in the background (spec §4: "foreground, with your OK").
-    const pointerRefused = POINTER.has(a.kind) && result !== undefined && !result.ok && result.code === 'background_unavailable'
-    if (((a.kind === 'keys' || a.kind === 'type') && undelivered) || pointerRefused) {
+    /** Runs the plan in the background, or in front when it must (with your OK); a halt says why it did not run. */
+    const deliver = async (): Promise<{ result?: ExecResult; halt?: string }> => {
+      let result = shortcut ? undefined : await runPlan(plan, d.mac, signal)
+      // Cua can call typing undelivered when it landed (seen in Messages, where the retry in front then doubled the
+      // text): read the field back, and only type again if the text is not there.
+      if (a.kind === 'type' && result?.escalation === 'delivery_failed' && element && (await landed(element, a.text))) result = { ...result, escalation: undefined }
+      const undelivered = !result || (!result.ok && result.code === 'same_pid_keyboard_ambiguity') || result.escalation === 'delivery_failed'
+      // Modifier clicks and some drags are refused in the background (spec §4: "foreground, with your OK").
+      const pointerRefused = POINTER.has(a.kind) && result !== undefined && !result.ok && result.code === 'background_unavailable'
+      if (!((a.kind === 'keys' || a.kind === 'type') && undelivered) && !pointerRefused) return { result }
       const appId = t.bundleId ?? t.app
       let allowed = d.front === true || foreground.has(t.pid) || d.trusted?.includes(appId) === true
       if (!allowed) {
@@ -534,9 +549,20 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
         if (answer === 'always') d.trust?.({ id: appId, app: t.app })
         allowed = answer !== 'deny'
       }
-      if (!allowed) return { halt: `the user did not allow bringing ${t.app} forward, so ${desc} was not run`, acknowledged }
-      result = await inFront(t, plan)
+      if (!allowed) return { halt: `the user did not allow bringing ${t.app} forward, so ${desc} was not run` }
+      return { result: await inFront(t, plan) }
     }
+    // In Watch mode the target stays in front, so your keyboard is held just while JevAuto types into it; in the
+    // background, inFront holds it from bringing the app forward until your app is back in front.
+    const held = (a.kind === 'keys' || a.kind === 'type') && d.front === true && !onWeb(t) ? await d.guardKeys?.().catch(() => undefined) : undefined
+    let delivered: { result?: ExecResult; halt?: string }
+    try {
+      delivered = await deliver()
+    } finally {
+      held?.()
+    }
+    if (delivered.halt) return { halt: delivered.halt, acknowledged }
+    const result = delivered.result
     if (!result) return { halt: `${desc} was not run`, acknowledged }
     if (ACTING.has(a.kind)) meter.addAction()
     d.log.write('action', { action: desc, app: t.app, ok: result.ok, code: result.code, effect: result.effect })

@@ -846,3 +846,24 @@ test('what one run learns about an app is shown to the next run in that app, onc
   assert.match(second.starts[0].context, /Tips about Mail saved by earlier runs.*1\) The Send button is at the top left\./)
   assert.doesNotMatch(second.nexts[0].notes.join(' '), /Tips about Mail/, 'shown once per run')
 })
+
+test('your keyboard is held while JevAuto borrows the front, and given back when it returns the front', async () => {
+  const world = new World()
+  const events: string[] = []
+  const orig = world.call.bind(world)
+  world.call = async (name, args) => (events.push(name), orig(name, args))
+  const script = new Script([{ actions: [{ kind: 'keys', callId: 'c1', keys: ['CMD', 'B'] }] }, { actions: [done('f1')] }])
+  await runTask(
+    deps(world, script, {
+      frontmost: async () => ({ pid: 999 }),
+      guardKeys: async () => {
+        events.push('guard on')
+        return () => void events.push('guard off')
+      },
+    }).d,
+  )
+  const on = events.indexOf('guard on')
+  assert.ok(on >= 0 && on < events.indexOf('bring_to_front'), events.join(' > '))
+  assert.ok(events.indexOf('hotkey') < events.indexOf('guard off'), events.join(' > '))
+  assert.equal(events.filter((e) => e === 'guard off').length, 1)
+})

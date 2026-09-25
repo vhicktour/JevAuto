@@ -7,7 +7,7 @@ import type { Handler, HandlerContext } from './agent'
 import type { AgentMethod } from '../shared/protocol'
 import { PHASE0_MODELS } from '../shared/constants'
 import { SPEEDS } from '../shared/motion'
-import { readFocus, readFrontmost } from '../shared/native'
+import { guardKeys, readFocus, readFrontmost } from '../shared/native'
 import { instructionsFor } from './loop/instructions'
 import { FULL_AUTO_BUDGET } from './loop/budget'
 import { runTask, type Decision } from './loop/run'
@@ -161,6 +161,7 @@ function startSession(settings: z.infer<typeof DriveSettings>, ctx: HandlerConte
       host: CLAUDE_CODE_HOSTS,
       reopen,
       lessons: lessonsOf(ctx),
+      guardKeys: () => guardKeys(ctx.init.nativeHelperPath),
     })
   })()
     // Setup failed before the loop ran (the loop answers its own failures): tell whoever is waiting.
@@ -216,6 +217,7 @@ async function agentRun(params: unknown, ctx: HandlerContext) {
       steer: () => ctx.takeSteers(),
       reopen,
       lessons: lessonsOf(ctx),
+      guardKeys: () => guardKeys(ctx.init.nativeHelperPath),
       ...(auto ? { auto, budget: FULL_AUTO_BUDGET } : {}),
     })
     return { ...result, log: log.path }

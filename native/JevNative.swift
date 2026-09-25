@@ -87,6 +87,32 @@ func focus(_ pid: pid_t) -> FocusJSON {
                    secure: subrole == "AXSecureTextField" || role == "AXSecureTextField")
 }
 
+// Keys typed on the keyboard, dropped while JevAuto borrows the front (spec §5: "your typing is gated while the agent
+// acts"). Hardware events carry no source process; the agent's own synthetic keys carry its pid and pass through.
+var guardTap: CFMachPort?
+func guardKeys(maxSeconds: Double) {
+  let mask = CGEventMask(1 << CGEventType.keyDown.rawValue) | CGEventMask(1 << CGEventType.keyUp.rawValue)
+  let callback: CGEventTapCallBack = { _, type, event, _ in
+    if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+      if let tap = guardTap { CGEvent.tapEnable(tap: tap, enable: true) }
+      return Unmanaged.passUnretained(event)
+    }
+    return event.getIntegerValueField(.eventSourceUnixProcessID) == 0 ? nil : Unmanaged.passUnretained(event)
+  }
+  guard let tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
+                                    eventsOfInterest: mask, callback: callback, userInfo: nil) else {
+    emit(["ok": false]); exit(1)
+  }
+  guardTap = tap
+  CFRunLoopAddSource(CFRunLoopGetCurrent(), CFMachPortCreateRunLoopSource(nil, tap, 0), .commonModes)
+  CGEvent.tapEnable(tap: tap, enable: true)
+  emit(["ok": true]) // the caller brings the app forward only after this line
+  // Ends when the caller closes stdin, or after maxSeconds so a crashed caller never leaves the keyboard dead.
+  DispatchQueue.global().async { _ = FileHandle.standardInput.readDataToEndOfFile(); exit(0) }
+  DispatchQueue.main.asyncAfter(deadline: .now() + maxSeconds) { exit(0) }
+  CFRunLoopRun()
+}
+
 func emit<T: Encodable>(_ value: T) {
   let data = try! JSONEncoder().encode(value)
   FileHandle.standardOutput.write(data)
@@ -106,7 +132,9 @@ case "ax-focus":
     FileHandle.standardError.write(Data("usage: JevNative ax-focus <pid>\n".utf8)); exit(64)
   }
   emit(focus(pid))
+case "guard-keys":
+  guardKeys(maxSeconds: 15)
 default:
-  FileHandle.standardError.write(Data("usage: JevNative displays|frontmost|mouse|ax-focus <pid>\n".utf8))
+  FileHandle.standardError.write(Data("usage: JevNative displays|frontmost|mouse|ax-focus <pid>|guard-keys\n".utf8))
   exit(64)
 }

@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 import { z } from 'zod'
 
@@ -49,6 +49,30 @@ export async function readMouse(helper: string) {
 /** Where the keystrokes for `pid` would go. Cua has no focus query, so the helper asks AX directly. */
 export async function readFocus(helper: string, pid: number): Promise<Focus> {
   return Focus.parse(await call(helper, 'ax-focus', String(pid)))
+}
+
+/**
+ * Holds keys typed on the keyboard (JevNative guard-keys) until the returned release is called; JevAuto's own keys
+ * still pass. Resolves once the hold is in place. If it can't be (no Accessibility, no helper), it resolves to a no-op
+ * rather than stopping the run. The helper lets go by itself after 15 s.
+ */
+export function guardKeys(helper: string): Promise<() => void> {
+  return new Promise((resolve) => {
+    const noop = () => {}
+    const child = spawn(helper, ['guard-keys'], { stdio: ['pipe', 'pipe', 'ignore'] })
+    const release = () => {
+      child.stdin?.end()
+      setTimeout(() => child.kill(), 500).unref()
+    }
+    const timer = setTimeout(() => (release(), resolve(noop)), 1_500)
+    child.stdout?.once('data', (chunk) => {
+      clearTimeout(timer)
+      if (/"ok"\s*:\s*true/.test(String(chunk))) return resolve(release)
+      release()
+      resolve(noop)
+    })
+    child.on('error', () => (clearTimeout(timer), resolve(noop)))
+  })
 }
 
 /** Centred on the notch at the top edge; displays without a notch get a pill 8 pt under the menu bar. */
