@@ -4,12 +4,14 @@ import { CursorGlyph } from './cursor/CursorGlyph'
 import { narrate } from './island-view'
 import { command, onUiEvent } from './events'
 import { Settings } from './Settings'
+import type { Speed } from '../../shared/motion'
 
 type Row = { act: UiAct; done?: UiDone }
 type Access = { accessibility: boolean; screenRecording: boolean }
 
 const GLYPH: Record<UiAct['verb'], string> = { click: '◉', type: '⌨', drag: '⇢', key: '⌥', set: '✎', menu: '☰', launch: '↗', scroll: '⇅', other: '•' }
 const STATE_LABEL: Record<UiStatus['state'], string> = { idle: 'Ready', working: 'Working', 'needs-you': 'Needs you', error: 'Error', done: 'Done', stopped: 'Stopped' }
+const SPEED_LABEL: Record<Speed, string> = { instant: 'Instant', balanced: 'Balanced', cinematic: 'Cinematic', teach: 'Teach' }
 
 /** The main window: what the agent can reach, what it is doing, and the controls to run or stop it. */
 export function Activity() {
@@ -23,15 +25,17 @@ export function Activity() {
   const [question, setQuestion] = useState<UiQuestion | null>(null)
   const [watch, setWatch] = useState(true)
   const [model, setModel] = useState('')
+  const [speed, setSpeed] = useState<Speed>('balanced')
   const [models, setModels] = useState<{ id: string; label: string }[]>([])
   const [showSettings, setShowSettings] = useState(false)
   const list = useRef<HTMLOListElement>(null)
 
   useEffect(() => {
     void command<string[]>({ type: 'status' }).then(setLog)
-    void command<{ watch: boolean; model: string; models: { id: string; label: string }[] }>({ type: 'settings' }).then((s) => {
+    void command<{ watch: boolean; model: string; speed: Speed; models: { id: string; label: string }[] }>({ type: 'settings' }).then((s) => {
       setWatch(s.watch)
       setModel(s.model)
+      setSpeed(s.speed)
       setModels(s.models)
     })
     return onUiEvent((e) => {
@@ -54,6 +58,7 @@ export function Activity() {
       else if (e.type === 'settings') {
         setWatch(e.watch)
         setModel(e.model)
+        setSpeed(e.speed)
       }
     })
   }, [])
@@ -127,8 +132,22 @@ export function Activity() {
             <i />
             {watch ? 'Watch' : 'Background'}
           </button>
+          <select
+            className="pill-select"
+            value={speed}
+            aria-label="Cursor speed"
+            title="Cursor speed. Teach moves slowly, draws the path and numbers each step."
+            disabled={busy}
+            onChange={(e) => void command({ type: 'speed', speed: e.target.value })}
+          >
+            {(Object.keys(SPEED_LABEL) as Speed[]).map((s) => (
+              <option key={s} value={s}>
+                {SPEED_LABEL[s]}
+              </option>
+            ))}
+          </select>
           {models.length > 1 && (
-            <select className="model-picker" value={model} aria-label="Model" disabled={busy} onChange={(e) => void command({ type: 'model', id: e.target.value })}>
+            <select className="pill-select" value={model} aria-label="Model" disabled={busy} onChange={(e) => void command({ type: 'model', id: e.target.value })}>
               {models.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.label}

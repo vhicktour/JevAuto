@@ -3,6 +3,7 @@ import { z } from 'zod'
 import type { Handler, HandlerContext } from './agent'
 import type { AgentMethod } from '../shared/protocol'
 import { PHASE0_MODELS } from '../shared/constants'
+import { SPEEDS } from '../shared/motion'
 import { readFocus, readFrontmost } from '../shared/native'
 import { INSTRUCTIONS } from './loop/instructions'
 import { runTask, type Answer } from './loop/run'
@@ -42,6 +43,7 @@ const AgentRun = z.object({
   watch: z.boolean().default(false),
   model: z.string().min(1).default(PHASE0_MODELS.openai),
   excluded: z.array(z.string()).max(100).default([]),
+  speed: z.enum(SPEEDS).default('balanced'),
 })
 /** Unanswered approvals expire as a no (spec §8); a question waits longer. */
 const APPROVAL_MS = 60_000
@@ -49,11 +51,13 @@ const QUESTION_MS = 5 * 60_000
 
 /** Runs one task through the loop, asking you (through main, the island and the activity window) when it must. */
 async function agentRun(params: unknown, ctx: HandlerContext) {
-  const { task, watch, model, excluded } = AgentRun.parse(params)
+  const { task, watch, model, excluded, speed } = AgentRun.parse(params)
   const adapter = adapterFor(model, INSTRUCTIONS, ctx.init.keys ?? {})
   const log = RunLog.open(ctx.init.runsDir, `${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}`)
   const mac = await visibleMac(ctx)
-  mac.pace = watch
+  // Watch mode waits for the cursor; so do Cinematic and Teach, whose whole point is that you can follow it.
+  mac.pace = watch || speed === 'cinematic' || speed === 'teach'
+  mac.speed = speed
   try {
     const result = await runTask({
       task,
@@ -87,6 +91,7 @@ async function agentRun(params: unknown, ctx: HandlerContext) {
     return { ...result, log: log.path }
   } finally {
     mac.pace = false
+    mac.speed = 'balanced'
     log.close()
   }
 }

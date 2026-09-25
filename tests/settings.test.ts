@@ -13,8 +13,18 @@ test('settings start from defaults, save what you change, and survive a restart'
   const a = new SettingsStore(d)
   assert.deepEqual(a.get(), DEFAULT_SETTINGS)
   a.update({ watch: false, model: 'gemini-3.8-flash', excluded: ['Slack', ' com.apple.mail '] })
-  assert.deepEqual(new SettingsStore(d).get(), { watch: false, model: 'gemini-3.8-flash', excluded: ['Slack', 'com.apple.mail'] })
+  assert.deepEqual(new SettingsStore(d).get(), { watch: false, model: 'gemini-3.8-flash', excluded: ['Slack', 'com.apple.mail'], speed: 'balanced' })
   assert.equal(statSync(join(d, 'settings.json')).mode & 0o777, 0o600)
+})
+
+test('the cursor speed is saved; a settings file from before it existed keeps its values', () => {
+  const d = dir()
+  writeFileSync(join(d, 'settings.json'), JSON.stringify({ watch: false, model: 'gemini-3.8-flash', excluded: ['Slack'] }))
+  const s = new SettingsStore(d)
+  assert.deepEqual(s.get(), { watch: false, model: 'gemini-3.8-flash', excluded: ['Slack'], speed: 'balanced' })
+  s.update({ speed: 'teach' })
+  assert.equal(new SettingsStore(d).get().speed, 'teach')
+  assert.throws(() => s.update({ speed: 'warp' as never }))
 })
 
 test('a broken or tampered settings file falls back to defaults instead of crashing', () => {

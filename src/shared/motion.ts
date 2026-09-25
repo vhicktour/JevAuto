@@ -10,6 +10,20 @@ export const CURSOR = {
   maxTravelMs: 650,
 } as const
 
+export type Motion = { peakSpeed: number; turnRadius: number; pressMs: number; dwellMs: number; minTravelMs: number; maxTravelMs: number }
+export const SPEEDS = ['instant', 'balanced', 'cinematic', 'teach'] as const
+export type Speed = (typeof SPEEDS)[number]
+
+/**
+ * Instant jumps straight to each target; Cinematic moves at about half speed and lingers, for demos. Teach moves like
+ * Cinematic and also draws the path and numbers each step, so you can follow and repeat it.
+ */
+export function motionFor(speed: Speed): Motion {
+  if (speed === 'instant') return { ...CURSOR, dwellMs: 0, minTravelMs: 0, maxTravelMs: 0 }
+  if (speed === 'cinematic' || speed === 'teach') return { ...CURSOR, peakSpeed: 450, dwellMs: 260, minTravelMs: 320, maxTravelMs: 1300 }
+  return { ...CURSOR }
+}
+
 export type Travel = { from: Point; to: Point; control: Point; durationMs: number }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
@@ -18,13 +32,13 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
 export const easeInOutSine = (t: number) => 0.5 - Math.cos(Math.PI * t) / 2
 
 /** A quadratic arc from `from` to `to`, bent sideways like a hand's path by at most the turn radius. */
-export function planTravel(from: Point, to: Point): Travel {
+export function planTravel(from: Point, to: Point, m: Motion = CURSOR): Travel {
   const dx = to.x - from.x
   const dy = to.y - from.y
   const d = Math.hypot(dx, dy)
   if (d === 0) return { from, to, control: { ...to }, durationMs: 0 }
-  const durationMs = Math.round(clamp(((1.5 * d) / CURSOR.peakSpeed) * 1000, CURSOR.minTravelMs, CURSOR.maxTravelMs))
-  const bend = Math.min(CURSOR.turnRadius, d * 0.2)
+  const durationMs = Math.round(clamp(((1.5 * d) / m.peakSpeed) * 1000, m.minTravelMs, m.maxTravelMs))
+  const bend = Math.min(m.turnRadius, d * 0.2)
   const side = dx >= 0 ? -1 : 1 // always bow the same way relative to travel, so paths feel consistent
   const control = { x: (from.x + to.x) / 2 + (-dy / d) * bend * side, y: (from.y + to.y) / 2 + (dx / d) * bend * side }
   return { from, to, control, durationMs }

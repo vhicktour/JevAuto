@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fc from 'fast-check'
-import { CURSOR, planDrag, planTravel, travelAt } from '../src/renderer/src/cursor/motion'
+import { CURSOR, SPEEDS, motionFor, planDrag, planTravel, travelAt } from '../src/renderer/src/cursor/motion'
 
 const point = fc.record({ x: fc.integer({ min: -1920, max: 3976 }), y: fc.integer({ min: 0, max: 1329 }) })
 const xy = (p: { x: number; y: number }) => ({ x: p.x, y: p.y })
@@ -53,4 +53,18 @@ test('a drag is a straight line at the pace of the drag, not an arc', () => {
   const d = planDrag({ x: 10, y: 20 }, { x: 210, y: 120 }, 500)
   assert.equal(d.durationMs, 500)
   assert.deepEqual(d.control, { x: 110, y: 70 })
+})
+
+test('speed modes: Instant jumps, Cinematic takes longer than Balanced, Balanced is the default motion', () => {
+  const from = { x: 0, y: 0 }
+  const to = { x: 400, y: 300 }
+  assert.deepEqual(motionFor('balanced'), CURSOR)
+  assert.equal(planTravel(from, to, motionFor('instant')).durationMs, 0)
+  assert.ok(planTravel(from, to, motionFor('cinematic')).durationMs > planTravel(from, to).durationMs)
+  assert.ok(motionFor('cinematic').dwellMs > CURSOR.dwellMs)
+})
+
+test('Teach moves at Cinematic pace (it adds the drawn path and step numbers, not a new speed)', () => {
+  assert.deepEqual(SPEEDS, ['instant', 'balanced', 'cinematic', 'teach'])
+  assert.deepEqual(motionFor('teach'), motionFor('cinematic'))
 })

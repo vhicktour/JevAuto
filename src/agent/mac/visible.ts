@@ -1,7 +1,7 @@
 import { windowsOf, windowStateOf, type ElementInfo, type WindowInfo } from './results'
 import type { CuaResult } from './cua'
 import type { UiAct } from '../../shared/ui-events'
-import { CURSOR, planTravel } from '../../shared/motion'
+import { motionFor, planTravel, type Speed } from '../../shared/motion'
 
 type Point = { x: number; y: number }
 type Rect = Point & { width: number; height: number }
@@ -60,6 +60,8 @@ export class VisibleMac implements Mac {
    * draws), so the app reacts exactly as the cursor presses instead of ahead of it.
    */
   pace = false
+  /** How fast the cursor moves: sets how long each paced wait lasts, and travels with each act to the overlay. */
+  speed: Speed = 'balanced'
   private cursorAt?: Point
   private snapshots = new Map<string, Map<number, ElementInfo>>()
   private windows = new Map<number, WindowGeometry>()
@@ -84,7 +86,8 @@ export class VisibleMac implements Mac {
     try {
       if (act.point && act.visible) {
         // The first trip starts from the island, which only the overlay can place: allow the longest travel.
-        if (this.pace) await pause((this.cursorAt ? planTravel(this.cursorAt, act.point).durationMs : CURSOR.maxTravelMs) + CURSOR.dwellMs, signal)
+        const m = motionFor(this.speed)
+        if (this.pace) await pause((this.cursorAt ? planTravel(this.cursorAt, act.point, m).durationMs : m.maxTravelMs) + m.dwellMs, signal)
         this.cursorAt = act.to ?? act.point
       } else if (verb !== 'key') this.cursorAt = undefined // the overlay hides; its next trip starts from the island again
       const result = await this.mac.call(name, args, signal)
@@ -168,6 +171,7 @@ export class VisibleMac implements Mac {
       ...(held.length ? { held } : {}),
       ...(verb === 'type' && typeof args.text === 'string' ? { text: args.text.slice(0, 200) } : {}),
       ...(verb === 'scroll' && ['up', 'down', 'left', 'right'].includes(String(args.direction)) ? { direction: args.direction as 'up' | 'down' | 'left' | 'right' } : {}),
+      speed: this.speed,
     }
   }
 }

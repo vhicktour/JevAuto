@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { SPEEDS } from './motion'
 
 /** Screen points, top-left origin (Electron's coordinate space). */
 const Point = z.object({ x: z.number(), y: z.number() })
@@ -23,6 +24,8 @@ export const UiAct = z.object({
   /** What is being typed, for the typing animation. */
   text: z.string().max(200).optional(),
   direction: z.enum(['up', 'down', 'left', 'right']).optional(),
+  /** The run's cursor speed, so the overlay travels exactly as long as the agent waits for it. */
+  speed: z.enum(SPEEDS).optional(),
 })
 export type UiAct = z.infer<typeof UiAct>
 
@@ -62,7 +65,7 @@ export const UiEvent = z.discriminatedUnion('type', [
   z.object({ type: z.literal('approval-closed'), id: z.string() }),
   z.object({ type: z.literal('question'), question: UiQuestion }),
   z.object({ type: z.literal('question-closed'), id: z.string() }),
-  /** Watch mode (each target comes to the front so the cursor can be seen working) and the model tasks run on. */
-  z.object({ type: z.literal('settings'), watch: z.boolean(), model: z.string() }),
+  /** Watch mode (each target comes to the front so the cursor can be seen working), the model and the cursor speed. */
+  z.object({ type: z.literal('settings'), watch: z.boolean(), model: z.string(), speed: z.enum(SPEEDS) }),
 ])
 export type UiEvent = z.infer<typeof UiEvent>

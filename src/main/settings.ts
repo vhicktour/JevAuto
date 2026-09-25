@@ -2,6 +2,7 @@ import { chmodSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { MODELS, type ModelId } from '../shared/models'
+import { SPEEDS } from '../shared/motion'
 
 const ModelIds = MODELS.map((m) => m.id) as [ModelId, ...ModelId[]]
 export const Settings = z.object({
@@ -10,10 +11,12 @@ export const Settings = z.object({
   model: z.enum(ModelIds),
   /** Apps JevAuto must never act in: names or bundle ids. */
   excluded: z.array(z.string().trim().min(1).max(200)).max(100),
+  /** How the cursor moves; files saved before this setting existed get the default. */
+  speed: z.enum(SPEEDS).default('balanced'),
 })
 export type Settings = z.infer<typeof Settings>
 
-export const DEFAULT_SETTINGS: Settings = { watch: true, model: MODELS[0].id, excluded: [] }
+export const DEFAULT_SETTINGS: Settings = { watch: true, model: MODELS[0].id, excluded: [], speed: 'balanced' }
 
 /** settings.json in userData, readable only by you. A damaged file means defaults, never a crash. */
 export class SettingsStore {

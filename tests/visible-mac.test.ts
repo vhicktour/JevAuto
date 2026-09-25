@@ -59,7 +59,7 @@ test('an element click is announced with its screen rect before the driver acts,
   await v.call('click', { pid: 3, window_id: 7, element_index: 4, snapshot_id: 's00000001' })
   assert.deepEqual(events[0], {
     name: 'ui.act',
-    data: { id: 'a1', verb: 'click', label: '7', app: 'Calculator', rect: { x: 100, y: 200, width: 40, height: 30 }, point: { x: 120, y: 215 }, visible: true },
+    data: { id: 'a1', verb: 'click', label: '7', app: 'Calculator', rect: { x: 100, y: 200, width: 40, height: 30 }, point: { x: 120, y: 215 }, visible: true, speed: 'balanced' },
   })
   assert.equal(events[1].name, 'ui.done')
   assert.equal(events[1].data.ok, true)
@@ -89,7 +89,7 @@ test('keys are narrated without a point; reads pass through silently; failures a
   await v.call('check_permissions', { prompt: false })
   assert.equal(events.length, 0)
   await v.call('press_key', { pid: 3, window_id: 7, key: 'return' })
-  assert.deepEqual(events[0].data, { id: 'a1', verb: 'key', label: 'return', app: 'Calculator', visible: false })
+  assert.deepEqual(events[0].data, { id: 'a1', verb: 'key', label: 'return', app: 'Calculator', visible: false, speed: 'balanced' })
   assert.equal(events[1].data.ok, false)
 })
 
@@ -130,4 +130,23 @@ test('a paced wait ends at once on Stop', async () => {
   setTimeout(() => controller.abort(), 20)
   await assert.rejects(pending)
   assert.ok(performance.now() - t0 < 200)
+})
+
+test('the cursor speed sets the wait: Instant never waits, Cinematic lingers longer; each act says its speed', async () => {
+  const { v, events } = visible()
+  v.pace = true
+  await v.call('get_window_state', { pid: 3, window_id: 7 })
+  await v.call('click', { pid: 3, window_id: 7, element_index: 4, snapshot_id: 's00000001' })
+  v.speed = 'instant'
+  let t = performance.now()
+  await v.call('click', { pid: 3, window_id: 7, element_index: 4, snapshot_id: 's00000001' })
+  const instant = performance.now() - t
+  v.speed = 'cinematic'
+  t = performance.now()
+  await v.call('click', { pid: 3, window_id: 7, element_index: 4, snapshot_id: 's00000001' })
+  const cinematic = performance.now() - t
+  assert.ok(instant < 60, `instant ${instant} ms`)
+  // Same point again: no travel, only Cinematic's longer dwell before the press.
+  assert.ok(cinematic >= 240 && cinematic < 600, `cinematic ${cinematic} ms`)
+  assert.deepEqual(events.filter((e) => e.name === 'ui.act').map((e) => e.data.speed), ['balanced', 'instant', 'cinematic'])
 })
