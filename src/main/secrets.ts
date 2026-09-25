@@ -7,6 +7,11 @@ export type KeyName = keyof Keys
 export const KEY_NAMES: KeyName[] = ['openai', 'anthropic', 'anthropicWorkspace', 'google', 'typesafe']
 
 /** Electron's safeStorage, which encrypts with a key kept in your login Keychain (spec §8). */
+/** Where the key a model uses comes from: saved in Settings (Keychain, wins), .env.local, or nowhere. */
+export function keySources(stored: Partial<Keys>, env: Partial<Keys>): Record<KeyName, 'keychain' | 'env' | 'none'> {
+  return Object.fromEntries(KEY_NAMES.map((k) => [k, stored[k] ? 'keychain' : env[k] ? 'env' : 'none'])) as Record<KeyName, 'keychain' | 'env' | 'none'>
+}
+
 export type Crypter = { available(): boolean; encrypt(text: string): Buffer; decrypt(data: Buffer): string }
 
 /**

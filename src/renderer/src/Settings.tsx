@@ -8,7 +8,7 @@ type View = {
   mcpCommand: string
   excluded: string[]
   trusted: { id: string; app: string }[]
-  keys: Record<string, boolean>
+  keys: Record<string, 'keychain' | 'env' | 'none'>
   version: string
   update: Update
 }
@@ -73,17 +73,19 @@ export function Settings({ access }: { access: { accessibility: boolean; screenR
               {k.label}
               <small>{k.hint}</small>
             </span>
-            <span className={`key-state${view.keys[k.name] ? ' is-set' : ''}`}>{view.keys[k.name] ? 'Set' : 'Not set'}</span>
+            <span className={`key-state${view.keys[k.name] !== 'none' ? ' is-set' : ''}`}>
+              {view.keys[k.name] === 'keychain' ? 'Set' : view.keys[k.name] === 'env' ? 'From .env.local' : 'Not set'}
+            </span>
             <input
               type="password"
               value={drafts[k.name] ?? ''}
               onChange={(e) => setDrafts((d) => ({ ...d, [k.name]: e.target.value }))}
-              placeholder={view.keys[k.name] ? 'Replace…' : 'Paste key'}
+              placeholder={view.keys[k.name] !== 'none' ? 'Replace…' : 'Paste key'}
               aria-label={`${k.label} key`}
               autoComplete="off"
               spellCheck={false}
             />
-            {view.keys[k.name] && (
+            {view.keys[k.name] === 'keychain' && (
               <button type="button" className="button button--quiet" onClick={() => void saveKey(k.name, '')}>
                 Clear
               </button>

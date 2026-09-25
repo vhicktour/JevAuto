@@ -79,3 +79,14 @@ test('Claude Code can drive JevAuto only after you turn it on', () => {
   new SettingsStore(d).update({ mcp: true })
   assert.equal(new SettingsStore(d).get().mcp, true)
 })
+
+test('each key says where it comes from, so Clear is offered only for keys saved in Settings', async () => {
+  const { keySources } = await import('../src/main/secrets')
+  assert.deepEqual(keySources({ openai: 'sk-a' }, { openai: 'sk-env', google: 'g-env' }), {
+    openai: 'keychain',
+    anthropic: 'none',
+    anthropicWorkspace: 'none',
+    google: 'env',
+    typesafe: 'none',
+  })
+})

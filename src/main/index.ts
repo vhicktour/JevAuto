@@ -13,7 +13,7 @@ import { keysFromEnvFile } from './keys'
 import { MODELS, type ModelId } from '../shared/models'
 import { SPEEDS } from '../shared/motion'
 import { SettingsStore } from './settings'
-import { KEY_NAMES, KeyStore, type KeyName } from './secrets'
+import { KEY_NAMES, KeyStore, keySources, type KeyName } from './secrets'
 import { readDisplays } from '../shared/native'
 import electronUpdater from 'electron-updater'
 import { Updates, type Updater } from './updates'
@@ -50,7 +50,7 @@ const availableModels = () => MODELS.filter((m) => lastInit?.keys?.[m.key]).map(
 
 function settingsView() {
   const s = settings!.get()
-  const set = Object.fromEntries(KEY_NAMES.map((k) => [k, Boolean(lastInit?.keys?.[k])]))
+  const set = keySources(keys!.all(), loadKeys() ?? {})
   return {
     watch: s.watch,
     model: s.model,
