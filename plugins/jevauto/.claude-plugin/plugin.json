@@ -1,0 +1,10 @@
+{
+  "name": "jevauto",
+  "version": "0.1.0",
+  "description": "Drive your Mac's apps and a browser through JevAuto: Claude sees each window and acts with JevAuto's cursor.",
+  "author": { "name": "Victor Udeh", "url": "https://github.com/vhicktour" },
+  "homepage": "https://github.com/vhicktour/JevAuto",
+  "repository": "https://github.com/vhicktour/JevAuto",
+  "license": "MIT",
+  "keywords": ["mac", "computer-use", "automation", "mcp"]
+}

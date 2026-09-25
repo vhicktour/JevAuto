@@ -71,6 +71,13 @@ export function makeFrame(source: Frame['source'], capture: Size, boundsPoints: 
   }
 }
 
+/** Where a screen point shows on the canvas; null when it falls outside the captured window. */
+export function screenPointsToCanvas(p: Point, f: Frame): Point | null {
+  const c = { x: (p.x - f.originPoints.x) * f.pixelsPerPoint, y: (p.y - f.originPoints.y) * f.pixelsPerPoint }
+  if (c.x < 0 || c.y < 0 || c.x >= f.capture.width || c.y >= f.capture.height) return null
+  return captureToCanvas(c, f.letterbox)
+}
+
 export function canvasToScreenPoints(p: Point, f: Frame): Point | null {
   const c = canvasToCapture(p, f.letterbox, f.capture)
   if (!c) return null

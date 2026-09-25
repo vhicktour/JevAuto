@@ -1,0 +1,10 @@
+#!/bin/bash
+# Connects Claude Code to a running JevAuto over its socket (JevAuto → Settings → Claude Code must be on).
+# JevAuto speaks MCP itself; nc only relays the lines between Claude Code and the socket.
+SOCK="${JEVAUTO_MCP_SOCKET:-$HOME/.jevauto/mcp.sock}"
+for _ in $(seq 1 20); do
+  [ -S "$SOCK" ] && exec /usr/bin/nc -U "$SOCK"
+  sleep 0.25
+done
+echo "JevAuto is not taking Claude Code connections. Open JevAuto, turn on Settings → Claude Code, then run /mcp to reconnect." >&2
+exit 1

@@ -2,7 +2,21 @@ import { z } from 'zod'
 
 export const PROTOCOL_VERSION = 1 as const
 
-export const AgentMethod = z.enum(['ping', 'permissions.check', 'cua.call', 'agent.run', 'spike.a', 'spike.b.capture', 'spike.demo', 'spike.stop.type'])
+export const AgentMethod = z.enum([
+  'ping',
+  'permissions.check',
+  'cua.call',
+  'agent.run',
+  'drive.call',
+  'drive.end',
+  'drive.stop',
+  'lessons.list',
+  'lessons.forget',
+  'spike.a',
+  'spike.b.capture',
+  'spike.demo',
+  'spike.stop.type',
+])
 export type AgentMethod = z.infer<typeof AgentMethod>
 
 export const AgentInit = z.object({

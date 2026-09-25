@@ -2,7 +2,16 @@ import { useEffect, useState } from 'react'
 import { command, onUiEvent } from './events'
 
 type Update = { status: 'off' | 'idle' | 'checking' | 'downloading' | 'ready' | 'error'; version?: string; error?: string }
-type View = { auto: boolean; excluded: string[]; trusted: { id: string; app: string }[]; keys: Record<string, boolean>; version: string; update: Update }
+type View = {
+  auto: boolean
+  mcp: boolean
+  mcpCommand: string
+  excluded: string[]
+  trusted: { id: string; app: string }[]
+  keys: Record<string, boolean>
+  version: string
+  update: Update
+}
 
 const UPDATE_LINE: Record<Update['status'], (u: Update) => string> = {
   off: () => 'Updates arrive with signed releases (off in this build).',
@@ -26,12 +35,14 @@ export function Settings({ access }: { access: { accessibility: boolean; screenR
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [excluded, setExcluded] = useState('')
   const [note, setNote] = useState('')
+  const [lessons, setLessons] = useState<{ app: string; tips: string[] }[]>([])
 
   const load = (v: View) => {
     setView(v)
     setExcluded(v.excluded.join('\n'))
   }
   useEffect(() => void command<View>({ type: 'settings' }).then(load), [])
+  useEffect(() => void command<{ app: string; tips: string[] }[]>({ type: 'lessons' }).then(setLessons, () => undefined), [])
   useEffect(() => onUiEvent((e) => e.type === 'update' && setView((v) => (v ? { ...v, update: e.update } : v))), [])
   const flash = (text: string) => {
     setNote(text)
@@ -120,6 +131,63 @@ export function Settings({ access }: { access: { accessibility: boolean; screenR
           Still refused: password fields, password managers, security prompts, JevAuto itself and the apps below. The model provider’s own safety checks still ask you. A web page
           can try to steer the agent, so use Full auto for tasks you are happy to let it finish alone.
         </p>
+      </section>
+
+      <section className="card">
+        <div className="card-title">
+          <h2>Claude Code</h2>
+          <button
+            type="button"
+            className={`watch-toggle${view.mcp ? ' is-on' : ''}`}
+            aria-pressed={view.mcp}
+            aria-label={view.mcp ? 'Stop letting Claude Code drive JevAuto' : 'Let Claude Code drive JevAuto'}
+            onClick={async () => load(await command<View>({ type: 'mcp', on: !view.mcp }))}
+          >
+            <i />
+            {view.mcp ? 'On' : 'Off'}
+          </button>
+        </div>
+        <p className="settings-hint">
+          Let Claude Code drive JevAuto: it looks at one window at a time and works with JevAuto’s cursor, under the same rules, approvals and Stop. JevAuto’s own models are
+          not used.
+        </p>
+        <p className="settings-hint">While this is on, any app running as you can reach JevAuto through its socket. Add it to Claude Code once:</p>
+        <code className="settings-code">{view.mcpCommand}</code>
+        <div className="settings-actions settings-actions--start">
+          <button
+            type="button"
+            className="button"
+            onClick={async () => {
+              await command({ type: 'copy-mcp-command' })
+              flash('Copied. Paste it in Terminal, then restart Claude Code.')
+            }}
+          >
+            Copy command
+          </button>
+        </div>
+      </section>
+
+      <section className="card">
+        <h2>What JevAuto learned</h2>
+        <p className="settings-hint">Tips saved after getting past a problem in an app or site. They are shown to later runs in that app. Remove any that look wrong.</p>
+        {lessons.every((l) => !l.tips.length) ? (
+          <p className="settings-hint">Nothing yet.</p>
+        ) : (
+          <ul className="trusted">
+            {lessons.flatMap((l) =>
+              l.tips.map((tip) => (
+                <li key={`${l.app}:${tip}`}>
+                  <span>
+                    <b>{l.app}</b> · {tip}
+                  </span>
+                  <button type="button" className="button button--quiet" onClick={async () => setLessons(await command({ type: 'forget-lesson', app: l.app, tip }))}>
+                    Remove
+                  </button>
+                </li>
+              )),
+            )}
+          </ul>
+        )}
       </section>
 
       <section className="card">

@@ -17,6 +17,8 @@ import { KEY_NAMES, KeyStore, type KeyName } from './secrets'
 import { readDisplays } from '../shared/native'
 import electronUpdater from 'electron-updater'
 import { Updates, type Updater } from './updates'
+import { McpServer } from './mcp'
+import type { DriveResult } from '../shared/drive'
 
 const root = dirname(fileURLToPath(import.meta.url))
 /** The exact renderer entry; privileged IPC is accepted only from this document (onemynd trust-boundary lesson). */
@@ -38,6 +40,11 @@ let settings: SettingsStore | undefined
 let keys: KeyStore | undefined
 /** Release builds keep themselves up to date (off in the dev bundle). */
 let updates: Updates | undefined
+/** Claude Code's way in, while you allow it in Settings. */
+let mcp: McpServer | undefined
+const mcpSocket = () => join(app.getPath('home'), '.jevauto', 'mcp.sock')
+/** Adds JevAuto to every Claude Code session on this Mac (user scope). */
+const mcpCommand = () => `claude mcp add --scope user jevauto -- /usr/bin/nc -U ${JSON.stringify(mcpSocket())}`
 /** Only the models whose provider key JevAuto has. */
 const availableModels = () => MODELS.filter((m) => lastInit?.keys?.[m.key]).map((m) => ({ id: m.id, label: m.label }))
 
@@ -55,6 +62,8 @@ function settingsView() {
     keys: set,
     version: app.getVersion(),
     update: updates?.current ?? { status: 'off' },
+    mcp: s.mcp,
+    mcpCommand: mcpCommand(),
   }
 }
 
@@ -115,6 +124,10 @@ const Command = z.discriminatedUnion('type', [
   z.object({ type: z.literal('model'), id: z.enum(MODELS.map((m) => m.id) as [ModelId, ...ModelId[]]) }),
   z.object({ type: z.literal('speed'), speed: z.enum(SPEEDS) }),
   z.object({ type: z.literal('auto'), on: z.boolean() }),
+  z.object({ type: z.literal('mcp'), on: z.boolean() }),
+  z.object({ type: z.literal('copy-mcp-command') }),
+  z.object({ type: z.literal('lessons') }),
+  z.object({ type: z.literal('forget-lesson'), app: z.string().max(100), tip: z.string().max(300) }),
   z.object({ type: z.literal('set-key'), name: z.enum(KEY_NAMES as [KeyName, ...KeyName[]]), value: z.string().max(500) }),
   z.object({ type: z.literal('set-excluded'), apps: z.array(z.string().trim().min(1).max(200)).max(100) }),
   z.object({ type: z.literal('open-privacy'), pane: z.enum(['accessibility', 'screen']) }),
@@ -122,7 +135,7 @@ const Command = z.discriminatedUnion('type', [
   z.object({ type: z.literal('install-update') }),
 ])
 
-ipcMain.handle('jevauto:command', (event, raw: unknown) => {
+ipcMain.handle('jevauto:command', async (event, raw: unknown) => {
   if (!sameDocument(event.senderFrame?.url)) throw new Error('Untrusted sender')
   const parsed = Command.safeParse(raw)
   if (!parsed.success) return { ok: false, error: 'Unknown command' }
@@ -143,6 +156,20 @@ ipcMain.handle('jevauto:command', (event, raw: unknown) => {
     settings!.update({ excluded: command.apps })
     return { ok: true, value: settingsView() }
   }
+  if (command.type === 'mcp') {
+    settings!.update({ mcp: command.on })
+    await applyMcp()
+    return { ok: true, value: settingsView() }
+  }
+  if (command.type === 'lessons' || command.type === 'forget-lesson') {
+    if (!supervisor) return { ok: true, value: [] }
+    if (command.type === 'forget-lesson') await supervisor.request('lessons.forget', { app: command.app, tip: command.tip }, { timeoutMs: 5_000 })
+    return { ok: true, value: await supervisor.request('lessons.list', {}, { timeoutMs: 5_000 }) }
+  }
+  if (command.type === 'copy-mcp-command') {
+    clipboard.writeText(mcpCommand())
+    return { ok: true, value: null }
+  }
   if (command.type === 'untrust') {
     settings!.update({ trusted: settings!.get().trusted.filter((t) => t.id !== command.id) })
     return { ok: true, value: settingsView() }
@@ -153,6 +180,7 @@ ipcMain.handle('jevauto:command', (event, raw: unknown) => {
     emit(`You told JevAuto: ${command.text}`)
     return { ok: true, value: null }
   }
+  if (command.type === 'task' && mcp?.driving) return { ok: false, error: 'Claude Code is driving JevAuto right now. Try again when it has finished.' }
   if (command.type === 'task' && command.when === 'next' && run) {
     if (queue.length >= QUEUE_MAX) return { ok: false, error: `At most ${QUEUE_MAX} tasks can wait.` }
     queue.push(command.text)
@@ -207,6 +235,8 @@ function relay(name: string, data: unknown) {
     : name === 'ui.approval-closed' && closed.success ? { type: 'approval-closed', id: closed.data.id }
     : name === 'ui.question-closed' && closed.success ? { type: 'question-closed', id: closed.data.id }
     : undefined
+  if (name === 'drive.ended') return mcp?.ended()
+  if (name === 'drive.failed') return emit(`Claude Code session could not start: ${String((data as { message?: unknown })?.message ?? '')}`)
   const trust = name === 'ui.trust' ? Trust.safeParse(data) : undefined
   if (trust?.success) {
     const { id, app } = trust.data
@@ -385,13 +415,49 @@ function haltAgent() {
 
 /** Stop: cancel the run at once, then halt the agent. */
 function stopWork() {
-  if (!run) return
+  const driving = mcp?.driving === true
+  if (!run && !driving) return
   queue = []
   broadcast({ type: 'queue', tasks: [] })
-  run.abort()
+  run?.abort()
+  if (driving) {
+    // Claude Code is told to ask you before it goes on; its session ends with the agent.
+    mcp!.pause(60_000)
+    void supervisor?.request('drive.stop', {}, { timeoutMs: 2_000 }).catch(() => undefined)
+  }
   broadcast({ type: 'status', status: { state: 'stopped', title: 'Stopped' } })
   emit('Stop: run cancelled; the agent is killed in 250 ms so queued input stops too.')
   haltAgent()
+}
+
+/** Opens or closes Claude Code's socket to match Settings. */
+async function applyMcp() {
+  const on = settings!.get().mcp
+  if (on && !mcp) {
+    const server = new McpServer({
+      socketPath: mcpSocket(),
+      version: app.getVersion(),
+      call: async (call) => {
+        if (!supervisor) return { ok: false, text: 'JevAuto is still starting. Try again in a moment.' }
+        if (run) return { ok: false, text: 'JevAuto is running one of its own tasks. Wait for it to finish, or ask the user to press Stop.' }
+        const { watch, speed, auto, excluded, trusted } = settings!.get()
+        return supervisor.request<DriveResult>('drive.call', { call, settings: { watch, speed, auto, excluded, trusted: trusted.map((t) => t.id) } }, { timeoutMs: 5 * 60_000 })
+      },
+      end: () => void supervisor?.request('drive.end', {}, { timeoutMs: 10_000 }).catch(() => undefined),
+      log: emit,
+    })
+    try {
+      await server.start()
+      mcp = server
+      emit(`Claude Code can drive JevAuto through ${mcpSocket()}.`)
+    } catch (error) {
+      emit(`Claude Code's socket could not open: ${error instanceof Error ? error.message : error}`)
+    }
+  } else if (!on && mcp) {
+    mcp.stop()
+    mcp = undefined
+    emit('Claude Code can no longer drive JevAuto.')
+  }
 }
 
 async function watchDisplays() {
@@ -423,6 +489,7 @@ app.whenReady().then(async () => {
     log: emit,
   })
   updates.start()
+  await applyMcp()
   // ⌃⌥Space, not ⌥Space: ChatGPT owns that one (spec §9).
   if (!globalShortcut.register('Control+Alt+Space', () => ui?.toggleCommandBar()))
     emit('⌃⌥Space is taken by another app; type tasks in the JevAuto window instead.')
@@ -438,6 +505,8 @@ app.whenReady().then(async () => {
 app.on('window-all-closed', () => app.quit())
 app.on('will-quit', () => globalShortcut.unregisterAll())
 app.on('before-quit', (event) => {
+  mcp?.stop() // no socket left behind for Claude Code to find
+  mcp = undefined
   if (shutdownComplete || !supervisor) return
   event.preventDefault()
   void supervisor.stop().finally(() => {

@@ -1,0 +1,12 @@
+{
+  "name": "jevauto",
+  "description": "JevAuto for Claude Code: drive your Mac's apps and a browser through JevAuto's cursor.",
+  "owner": { "name": "Victor Udeh", "url": "https://github.com/vhicktour/JevAuto" },
+  "plugins": [
+    {
+      "name": "jevauto",
+      "description": "Claude looks at one window at a time and clicks, types and presses keys through JevAuto, under JevAuto's rules and Stop.",
+      "source": "./plugins/jevauto"
+    }
+  ]
+}

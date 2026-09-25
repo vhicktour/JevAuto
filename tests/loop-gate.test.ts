@@ -113,3 +113,9 @@ test('Return and new lines in a Mac app\'s multi-line text just add lines; chat 
   assert.equal(gate(input(keys('ENTER'), { target: textEdit, focus: { ...field, role: 'AXTextField' } })).decision, 'ask')
   assert.equal(gate(input(keys('ENTER'), { target: textEdit, focus: 'unknown' })).decision, 'ask')
 })
+
+test('while Claude Code drives, the terminal or editor it may run in is off limits', () => {
+  const terminal = { app: 'Terminal', bundleId: 'com.apple.Terminal', title: 'claude' }
+  assert.match(gate(input(type('yes'), { target: terminal, focus: field, host: ['com.apple.Terminal'] })).decision, /refuse/)
+  assert.equal(gate(input(type('yes'), { target: terminal, focus: field })).decision, 'allow', 'JevAuto’s own runs may still use it')
+})

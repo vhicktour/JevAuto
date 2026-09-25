@@ -16,6 +16,8 @@ export type GateInput = {
   safety?: unknown[]
   /** Your excluded apps: bundle ids or app names. */
   excluded?: string[]
+  /** Apps the driving brain may be running in (Claude Code's terminal or editor): never targets while it drives. */
+  host?: string[]
 }
 
 const allow: Verdict = { decision: 'allow' }
@@ -46,9 +48,11 @@ const SETTINGS = { bundles: ['com.apple.systempreferences'], names: ['system set
 const PRIVACY_PANES = /privacy|security|password|users & groups|touch id|login items|profiles|device management/i
 
 /** Why JevAuto must not act in this window, or undefined when it may. */
-export function exclusionReason(t: GateTarget, excluded: string[] = []): string | undefined {
+export function exclusionReason(t: GateTarget, excluded: string[] = [], host: string[] = []): string | undefined {
   const bundle = t.bundleId
   const name = t.app.trim().toLowerCase()
+  // Driving the app Claude Code runs in would let it answer its own permission prompts (as JevAuto may not drive itself).
+  if (bundle && host.includes(bundle)) return `Claude Code cannot drive ${t.app}: it may be running there and could answer its own prompts.`
   for (const group of EXCLUDED) {
     if (bundle && (group.bundles.includes(bundle) || group.prefixes?.some((p) => bundle.startsWith(p)))) return group.why
     if (!bundle && group.names.includes(name)) return group.why
@@ -105,7 +109,7 @@ function fieldName(e: ElementInfo | undefined): string {
 
 /** Hard rules, then structural detectors, then provider signals (spec §8). Deny by default: unknown focus asks. */
 export function gate(i: GateInput): Verdict {
-  const excluded = exclusionReason(i.target, i.excluded)
+  const excluded = exclusionReason(i.target, i.excluded, i.host)
   if (excluded) return refuse(excluded)
   const a = i.action
   const focus = i.focus

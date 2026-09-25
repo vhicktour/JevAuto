@@ -673,3 +673,176 @@ test('Full auto runs are told not to ask; other runs are told to try before aski
   assert.match(instructionsFor(true), /Full auto: they want the task finished without being asked/)
   assert.match(instructionsFor(true), /Never make up facts about the user/)
 })
+
+// ---- Claude Code driving over MCP: each call is one turn of this same loop ----
+import { DriveAdapter, actionsFor } from '../src/agent/drive/adapter'
+import { parseDriveCall, type DriveCall } from '../src/shared/drive'
+
+const call = (raw: Record<string, unknown>): DriveCall => {
+  const parsed = parseDriveCall(raw)
+  if (!parsed.ok) throw new Error(parsed.error)
+  return parsed.call
+}
+
+test('Claude Code drives through the loop: it looks, clicks, and each answer carries the window, the result and a fresh screenshot', async () => {
+  const world = new World()
+  const drive = new DriveAdapter()
+  const running = runTask(deps(world, drive as unknown as Script, { stall: false }).d)
+  const seen = await drive.submit(call({ tool: 'look' }))
+  assert.equal(seen.ok, true)
+  assert.match(seen.text, /^Window 7: Mail — “New Message”/)
+  assert.match(seen.text, /Button “Bold” at \(160, 40\)/, 'controls are named with their centres in screenshot pixels')
+  assert.ok(seen.image && seen.image.length > 100)
+  const clicked = await drive.submit(call({ tool: 'click', x: 160, y: 40 }))
+  assert.equal(clicked.ok, true, clicked.text)
+  assert.deepEqual(world.acted().map((c) => c.name), ['click'])
+  const quiet = await drive.submit(call({ tool: 'keys', keys: ['cmd', 'b'], screenshot: false }))
+  assert.equal(quiet.image, undefined)
+  drive.end()
+  const result = await running
+  assert.equal(result.status, 'success')
+  assert.equal(result.usd, 0)
+})
+
+test('Claude Code must look before acting, and look again when the window it saw is no longer the target', async () => {
+  const world = new World()
+  world.windows.push({ window_id: 8, pid: 43, app_name: 'Notes', title: 'Groceries', bounds: { x: 0, y: 0, width: 300, height: 300 }, z_index: 5, colour: 50 })
+  const drive = new DriveAdapter()
+  const running = runTask(deps(world, drive as unknown as Script, { stall: false }).d)
+  assert.match((await drive.submit(call({ tool: 'click', x: 10, y: 10 }))).text, /Look first/)
+  await drive.submit(call({ tool: 'look' }))
+  assert.match((await drive.submit(call({ tool: 'look', window: 8 }))).text, /^Window 8: Notes/)
+  await drive.submit(call({ tool: 'look', window: 7 }))
+  assert.equal((await drive.submit(call({ tool: 'type', text: 'milk' }))).ok, true)
+  // A shortcut Claude sent without asking for a screenshot opens a new Mail window, which becomes the target.
+  world.after = (c, w) => {
+    if (c.name === 'hotkey')
+      w.windows.push({ window_id: 9, pid: 42, app_name: 'Mail', title: 'New Message 2', bounds: { x: 100, y: 50, width: 640, height: 400 }, z_index: 20, colour: 30 })
+  }
+  await drive.submit(call({ tool: 'keys', keys: ['cmd', 'n'], screenshot: false }))
+  assert.match((await drive.submit(call({ tool: 'click', x: 160, y: 40 }))).text, /window changed since your last screenshot/)
+  assert.deepEqual(world.acted().map((c) => c.name), ['type_text', 'hotkey'])
+  drive.end()
+  await running
+})
+
+test('a send from Claude Code waits for your OK like any other step, unless Full auto is on', async () => {
+  for (const auto of [false, true]) {
+    const world = new World()
+    const drive = new DriveAdapter()
+    const { d, approvals } = deps(world, drive as unknown as Script, { stall: false, auto })
+    const running = runTask(d)
+    await drive.submit(call({ tool: 'look' }))
+    await drive.submit(call({ tool: 'click', x: 60, y: 40 })) // "Send"
+    assert.deepEqual(approvals.map((a) => a.kind), auto ? [] : ['action'], `auto=${auto}`)
+    drive.end()
+    await running
+  }
+})
+
+test('Stop ends the session: the loop finishes and later calls are told to start again', async () => {
+  const world = new World()
+  const drive = new DriveAdapter()
+  const controller = new AbortController()
+  const running = runTask(deps(world, drive as unknown as Script, { stall: false, signal: controller.signal }).d)
+  await drive.submit(call({ tool: 'look' }))
+  controller.abort()
+  assert.equal((await running).status, 'stopped')
+  assert.match((await drive.submit(call({ tool: 'look' }))).text, /session has ended/)
+})
+
+test('calls map onto the loop\'s actions; arguments are checked at the boundary', () => {
+  assert.deepEqual(actionsFor(call({ tool: 'look', window: 9 }), 'c1', 7), [
+    { kind: 'tool', callId: 'c1w', name: 'switch_target', input: { window_id: 9 } },
+    { kind: 'screenshot', callId: 'c1' },
+  ])
+  assert.deepEqual(actionsFor(call({ tool: 'look', window: 7 }), 'c1', 7), [{ kind: 'screenshot', callId: 'c1' }])
+  assert.deepEqual(actionsFor(call({ tool: 'scroll', x: 5, y: 6, direction: 'up', amount: 4 }), 'c2', 7), [
+    { kind: 'scroll', callId: 'c2', x: 5, y: 6, space: 'pixels', dx: 0, dy: -1, notches: 4 },
+  ])
+  assert.equal(actionsFor(call({ tool: 'wait', seconds: 3 }), 'c3', 7).length, 3)
+  assert.deepEqual(actionsFor(call({ tool: 'click', x: 1, y: 2, count: 2, modifiers: ['cmd'] }), 'c4', 7), [
+    { kind: 'click', callId: 'c4', x: 1, y: 2, space: 'pixels', button: 'left', count: 2, keys: ['cmd'] },
+  ])
+  assert.equal(parseDriveCall({ tool: 'rm_rf' }).ok, false)
+  assert.equal(parseDriveCall({ tool: 'click', x: 1 }).ok, false)
+  assert.equal(parseDriveCall({ tool: 'type', text: 'hi', extra: true }).ok, false)
+  assert.equal(parseDriveCall({ tool: '__proto__' }).ok, false)
+})
+
+test('typing Cua could not confirm is read back before any retry: text that landed is never typed twice', async () => {
+  // Seen live in Messages: the background type landed, Cua still said delivery_failed, and the retry in front doubled it.
+  const landed = new World()
+  const orig = landed.call.bind(landed)
+  landed.call = async (name, args) => {
+    const r = await orig(name, args)
+    if (name !== 'type_text' || args.delivery_mode === 'foreground') return r
+    ;(landed.elements[7][3] as { value: string }).value = String(args.text) // it arrived anyway
+    return { ...r, structured: { effect: 'unverifiable', escalation: { reason: 'delivery_failed' } } }
+  }
+  const script = new Script([{ actions: [{ kind: 'type', callId: 'c1', text: 'see you at 6' }] }, { actions: [done('f1')] }])
+  const { d, approvals } = deps(landed, script)
+  await runTask(d)
+  assert.equal(landed.calls.filter((c) => c.name === 'type_text').length, 1)
+  assert.deepEqual(approvals, [], 'no need to bring the app forward')
+
+  // Nothing arrived: the retry in front still happens (with your OK).
+  const lost = new World()
+  const origLost = lost.call.bind(lost)
+  lost.call = async (name, args) => {
+    const r = await origLost(name, args)
+    return name === 'type_text' && args.delivery_mode !== 'foreground' ? { ...r, structured: { effect: 'unverifiable', escalation: { reason: 'delivery_failed' } } } : r
+  }
+  const again = new Script([{ actions: [{ kind: 'type', callId: 'c1', text: 'see you at 6' }] }, { actions: [done('f1')] }])
+  await runTask(deps(lost, again).d)
+  assert.deepEqual(lost.calls.filter((c) => c.name === 'type_text').map((c) => c.args.delivery_mode ?? 'background'), ['background', 'foreground'])
+})
+
+test('an app that launches with no window is asked once to show one, without coming forward', async () => {
+  const world = new World()
+  world.apps.push({ pid: 0, bundle_id: 'com.apple.MobileSMS', name: 'Messages', running: false })
+  const reopened: string[] = []
+  const script = new Script([{ actions: [{ kind: 'tool', callId: 'f1', name: 'open_app', input: { name: 'Messages' } }] }, { actions: [done('f2')] }])
+  const orig = world.call.bind(world)
+  world.call = async (name, args) =>
+    name === 'launch_app' ? (world.calls.push({ name, args }), { text: 'ok', imageCount: 0, images: [], structured: { pid: 77, bundle_id: 'com.apple.MobileSMS', name: 'Messages' }, isError: false, durationMs: 1 }) : orig(name, args)
+  await runTask(
+    deps(world, script, {
+      reopen: async (id) => {
+        reopened.push(id)
+        world.windows.push({ window_id: 30, pid: 77, app_name: 'Messages', title: 'Messages', bounds: { x: 0, y: 0, width: 400, height: 300 }, z_index: 3, colour: 70 })
+      },
+    }).d,
+  )
+  assert.deepEqual(reopened, ['com.apple.MobileSMS'])
+  assert.match(script.nexts[0].results[0].kind === 'function' ? script.nexts[0].results[0].output : '', /"ok":true/)
+})
+
+test('do runs several steps in one call with one screenshot at the end; a failed step stops the rest', async () => {
+  const world = new World()
+  const drive = new DriveAdapter()
+  const running = runTask(deps(world, drive as unknown as Script, { stall: false }).d)
+  await drive.submit(call({ tool: 'look' }))
+  const r = await drive.submit(call({ tool: 'do', steps: [{ tool: 'click', x: 160, y: 40 }, { tool: 'keys', keys: ['nope-key'] }, { tool: 'type', text: 'never' }] }))
+  assert.equal(r.ok, false)
+  assert.ok(r.image, 'one screenshot for the whole batch')
+  assert.deepEqual(world.acted().map((c) => c.name), ['click'])
+  assert.match(r.text, /Unknown key/)
+  drive.end()
+  await running
+})
+
+test('what one run learns about an app is shown to the next run in that app, once', async () => {
+  const saved = new Map<string, string[]>()
+  const lessons = {
+    for: (app: string) => saved.get(app.toLowerCase()) ?? [],
+    add: (app: string, tip: string) => (saved.set(app.toLowerCase(), [tip, ...(saved.get(app.toLowerCase()) ?? [])]), { ok: true }),
+  }
+  const first = new Script([{ actions: [{ kind: 'tool', callId: 'f1', name: 'remember', input: { app: 'Mail', tip: 'The Send button is at the top left.' } }] }, { actions: [done('f2')] }])
+  await runTask(deps(new World(), first, { lessons }).d)
+  assert.deepEqual(saved.get('mail'), ['The Send button is at the top left.'])
+  const second = new Script([{ actions: [BOLD('c1')] }, { actions: [done('f1')] }])
+  await runTask(deps(new World(), second, { lessons }).d)
+  assert.match(second.starts[0].context, /Tips about Mail saved by earlier runs.*1\) The Send button is at the top left\./)
+  assert.doesNotMatch(second.nexts[0].notes.join(' '), /Tips about Mail/, 'shown once per run')
+})

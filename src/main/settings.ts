@@ -15,12 +15,14 @@ export const Settings = z.object({
   speed: z.enum(SPEEDS).default('balanced'),
   /** Full auto: JevAuto answers its own questions (sends, submits, bringing apps forward). Off until you turn it on. */
   auto: z.boolean().default(false),
+  /** Let Claude Code drive JevAuto over MCP (a socket only you can open). Off until you turn it on. */
+  mcp: z.boolean().default(false),
   /** Apps you answered "Always" for: they come forward for shortcuts without asking. `id` is the bundle id or name. */
   trusted: z.array(z.object({ id: z.string().min(1).max(300), app: z.string().min(1).max(200) })).max(100).default([]),
 })
 export type Settings = z.infer<typeof Settings>
 
-export const DEFAULT_SETTINGS: Settings = { watch: true, model: MODELS[0].id, excluded: [], speed: 'balanced', auto: false, trusted: [] }
+export const DEFAULT_SETTINGS: Settings = { watch: true, model: MODELS[0].id, excluded: [], speed: 'balanced', auto: false, mcp: false, trusted: [] }
 
 /** settings.json in userData, readable only by you. A damaged file means defaults, never a crash. */
 export class SettingsStore {

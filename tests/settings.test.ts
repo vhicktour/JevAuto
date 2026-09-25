@@ -13,7 +13,7 @@ test('settings start from defaults, save what you change, and survive a restart'
   const a = new SettingsStore(d)
   assert.deepEqual(a.get(), DEFAULT_SETTINGS)
   a.update({ watch: false, model: 'gemini-3.8-flash', excluded: ['Slack', ' com.apple.mail '] })
-  assert.deepEqual(new SettingsStore(d).get(), { watch: false, model: 'gemini-3.8-flash', excluded: ['Slack', 'com.apple.mail'], speed: 'balanced', auto: false, trusted: [] })
+  assert.deepEqual(new SettingsStore(d).get(), { watch: false, model: 'gemini-3.8-flash', excluded: ['Slack', 'com.apple.mail'], speed: 'balanced', auto: false, mcp: false, trusted: [] })
   assert.equal(statSync(join(d, 'settings.json')).mode & 0o777, 0o600)
 })
 
@@ -21,7 +21,7 @@ test('the cursor speed is saved; a settings file from before it existed keeps it
   const d = dir()
   writeFileSync(join(d, 'settings.json'), JSON.stringify({ watch: false, model: 'gemini-3.8-flash', excluded: ['Slack'] }))
   const s = new SettingsStore(d)
-  assert.deepEqual(s.get(), { watch: false, model: 'gemini-3.8-flash', excluded: ['Slack'], speed: 'balanced', auto: false, trusted: [] })
+  assert.deepEqual(s.get(), { watch: false, model: 'gemini-3.8-flash', excluded: ['Slack'], speed: 'balanced', auto: false, mcp: false, trusted: [] })
   s.update({ speed: 'teach' })
   assert.equal(new SettingsStore(d).get().speed, 'teach')
   assert.throws(() => s.update({ speed: 'warp' as never }))
@@ -71,4 +71,11 @@ test('Full auto is off until you turn it on, and stays as you left it', () => {
   assert.equal(new SettingsStore(d).get().auto, false)
   new SettingsStore(d).update({ auto: true })
   assert.equal(new SettingsStore(d).get().auto, true)
+})
+
+test('Claude Code can drive JevAuto only after you turn it on', () => {
+  const d = dir()
+  assert.equal(new SettingsStore(d).get().mcp, false)
+  new SettingsStore(d).update({ mcp: true })
+  assert.equal(new SettingsStore(d).get().mcp, true)
 })

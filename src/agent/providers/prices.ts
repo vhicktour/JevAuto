@@ -14,6 +14,8 @@ const PRICES: Record<string, Price> = {
   // Gemini API pricing page, read 2026-09-24. 3.8 Flash doubles on 2027-01-01. Gemini has no cache-write charge.
   'gemini-3.8-flash': { input: 0.75, cachedInput: 0.075, cacheWrite: 0.75, output: 3.75 },
   'gemini-3.5-flash': { input: 1.5, cachedInput: 0.15, cacheWrite: 1.5, output: 9 },
+  // Claude Code driving over MCP: JevAuto calls no model, so its runs cost nothing here.
+  'claude-code': { input: 0, cachedInput: 0, cacheWrite: 0, output: 0 },
 }
 
 /** `input_tokens` includes the cached and cache-write tokens; each part has its own rate. Unknown models return undefined. */

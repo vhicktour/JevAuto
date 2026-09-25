@@ -41,6 +41,8 @@ export class Targets {
     private readonly excluded: string[] = [],
     /** Cua errors are reported here instead of passing for "no apps" or "no windows". */
     private readonly onError: (what: string, text: string) => void = () => {},
+    /** Apps the driving brain may run in (see GateInput.host). */
+    private readonly host: string[] = [],
   ) {}
 
   /** `list_apps` is slow (~0.9 s), so it runs at start and again only for a pid it has not seen. A failed read keeps the last list. */
@@ -87,7 +89,7 @@ export class Targets {
   }
 
   allowed(windows: Window[]): Window[] {
-    return windows.filter((w) => exclusionReason(w, this.excluded) === undefined)
+    return windows.filter((w) => exclusionReason(w, this.excluded, this.host) === undefined)
   }
 
   /** The frontmost window you could see and JevAuto may act in, skipping `avoid` (the terminal running the CLI). */
@@ -117,7 +119,7 @@ export class Targets {
   }
 
   exclusion(t: Target): string | undefined {
-    return exclusionReason(t, this.excluded)
+    return exclusionReason(t, this.excluded, this.host)
   }
 }
 

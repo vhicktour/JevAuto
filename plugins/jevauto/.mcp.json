@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "jevauto": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/jevauto-mcp"
+    }
+  }
+}
