@@ -28,10 +28,10 @@ const CONSEQUENTIAL: [string, GateInput][] = [
   ['click Install', input(click, { element: button('Install') })],
   ['click Erase', input(click, { element: button('Erase…') })],
   ['click Accept', input(click, { element: button('Accept') })],
-  ['press Return', input(keys('ENTER'), { focus: field })],
+  ['press Return in a chat app', input(keys('ENTER'), { target: { app: 'Messages', bundleId: 'com.apple.MobileSMS', title: 'Messages' }, focus: field })],
   ['press cmd+shift+D (Mail send)', input(keys('CMD', 'SHIFT', 'D'), { focus: field })],
   ['press cmd+Delete (move to Trash)', input(keys('CMD', 'BACKSPACE'), { focus: field })],
-  ['type a new line', input(type('hello\nworld'), { focus: field })],
+  ['type a new line into a web page', input(type('hello\nworld'), { focus: { ...field, webArea: true } })],
   ['provider safety check', input(click, { element: button('Continue'), safety: [{ id: 's1', code: 'malicious_instructions', message: 'Check the page' }] })],
 ]
 
@@ -98,4 +98,18 @@ test('a refusal or a question always says why', () => {
     const v = gate(i)
     assert.ok(v.decision === 'ask' && v.reason.length > 5, name)
   }
+})
+
+test('Return and new lines in a Mac app\'s multi-line text just add lines; chat apps, web pages and one-line fields still ask', () => {
+  const textEdit = { app: 'TextEdit', bundleId: 'com.apple.TextEdit', title: 'Notes.rtf' }
+  const messages = { app: 'Messages', bundleId: 'com.apple.MobileSMS', title: 'Messages' }
+  assert.equal(gate(input(type('Line one\nLine two'), { target: textEdit, focus: field })).decision, 'allow')
+  assert.equal(gate(input(keys('ENTER'), { target: textEdit, focus: field })).decision, 'allow')
+  assert.equal(gate(input(keys('SHIFT', 'ENTER'), { target: textEdit, focus: field })).decision, 'allow')
+  assert.equal(gate(input(keys('CMD', 'ENTER'), { target: textEdit, focus: field })).decision, 'ask', 'cmd+Return sends in many apps')
+  assert.equal(gate(input(keys('ENTER'), { target: messages, focus: field })).decision, 'ask')
+  assert.equal(gate(input(type('see you\n'), { target: messages, focus: field })).decision, 'ask')
+  assert.equal(gate(input(keys('ENTER'), { target: textEdit, focus: { ...field, webArea: true } })).decision, 'ask')
+  assert.equal(gate(input(keys('ENTER'), { target: textEdit, focus: { ...field, role: 'AXTextField' } })).decision, 'ask')
+  assert.equal(gate(input(keys('ENTER'), { target: textEdit, focus: 'unknown' })).decision, 'ask')
 })

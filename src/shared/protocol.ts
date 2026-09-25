@@ -23,8 +23,11 @@ export const AgentInit = z.object({
 })
 export type AgentInit = z.infer<typeof AgentInit>
 
-/** Your answer to an approval (`answer`) or to a question the agent asked (`text`, null when skipped). */
-export const Reply = z.object({ answer: z.enum(['once', 'run', 'deny']).optional(), text: z.string().max(4000).nullable().optional() })
+/**
+ * Your answer to an approval (`answer`, with `text` when you edited what it types) or to a question the agent asked
+ * (`text`, null when skipped).
+ */
+export const Reply = z.object({ answer: z.enum(['once', 'run', 'always', 'deny']).optional(), text: z.string().max(4000).nullable().optional() })
 export type Reply = z.infer<typeof Reply>
 
 export const HostToAgent = z.discriminatedUnion('type', [
@@ -32,6 +35,8 @@ export const HostToAgent = z.discriminatedUnion('type', [
   z.object({ type: z.literal('request'), id: z.string().min(1), method: AgentMethod, params: z.unknown() }),
   z.object({ type: z.literal('cancel'), id: z.string().min(1) }),
   z.object({ type: z.literal('reply'), id: z.string().min(1) }).extend(Reply.shape),
+  /** Something you tell the running task; the model reads it with its next step. */
+  z.object({ type: z.literal('steer'), text: z.string().trim().min(1).max(2000) }),
   z.object({ type: z.literal('shutdown') }),
 ])
 export type HostToAgent = z.infer<typeof HostToAgent>

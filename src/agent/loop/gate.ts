@@ -69,6 +69,30 @@ const TEXT_ROLES = new Set(['AXTextField', 'AXTextArea', 'AXSearchField', 'AXCom
 const SECRET = /password|passcode|passwort|contraseña|mot de passe|\bpin\b/i
 const SENSITIVE = /card number|credit card|\bcvc\b|\bcvv\b|security code|one[- ]time|verification code|authentication code|two[- ]factor|\b2fa\b/i
 const NAVIGATION = new Set(['tab', 'escape', 'up', 'down', 'left', 'right'])
+// Apps whose message box sends on Return. Web-based ones (Slack, Discord, Teams) are also caught as web areas.
+const CHAT_BUNDLES = new Set([
+  'com.apple.MobileSMS',
+  'com.apple.iChat',
+  'net.whatsapp.WhatsApp',
+  'desktop.WhatsApp',
+  'ru.keepcoder.Telegram',
+  'com.tdesktop.Telegram',
+  'com.hnc.Discord',
+  'com.tinyspeck.slackmacgap',
+  'com.microsoft.teams',
+  'com.microsoft.teams2',
+  'com.facebook.archon',
+  'org.whispersystems.signal-desktop',
+  'com.skype.skype',
+  'us.zoom.xos',
+])
+const CHAT_NAMES = new Set(['messages', 'whatsapp', 'telegram', 'discord', 'slack', 'microsoft teams', 'messenger', 'signal', 'skype', 'zoom'])
+
+/** Return only adds a line in a Mac app's multi-line text (TextEdit, Notes, Pages); chat boxes and web pages can send. */
+function newLineIsSafe(target: GateTarget, focus: Focus | 'unknown' | undefined): boolean {
+  if (focus === undefined || focus === 'unknown' || !focus.ok || focus.webArea || focus.role !== 'AXTextArea') return false
+  return target.bundleId ? !CHAT_BUNDLES.has(target.bundleId) : !CHAT_NAMES.has(target.app.trim().toLowerCase())
+}
 
 function controlLabel(e: ElementInfo | undefined): string {
   if (!e || TEXT_ROLES.has(e.role)) return ''
@@ -91,7 +115,7 @@ export function gate(i: GateInput): Verdict {
     if (secure || SECRET.test(fieldName(i.element))) return refuse('That is a password field. JevAuto never types passwords; please type it yourself.')
     if (focus === undefined || focus === 'unknown' || !focus.ok) return ask('JevAuto cannot tell which field this text will go into.')
     if (SENSITIVE.test(fieldName(i.element))) return ask(`This field looks like a card or security code (“${i.element?.label}”).`)
-    if (/[\r\n]/.test(a.text)) return ask('Typing a new line can submit a form or send a message.')
+    if (/[\r\n]/.test(a.text) && !newLineIsSafe(i.target, focus)) return ask('Typing a new line can submit a form or send a message.')
   }
 
   if (a.kind === 'keys') {
@@ -100,7 +124,8 @@ export function gate(i: GateInput): Verdict {
       const key = k.tool === 'hotkey' ? k.keys[k.keys.length - 1] : k.key
       const mods = k.tool === 'hotkey' ? k.keys.slice(0, -1) : []
       if (secure && !(NAVIGATION.has(key) && !mods.length)) return refuse('The focus is on a password field. JevAuto never types into one.')
-      if (key === 'return') return ask('Pressing Return can submit a form or send a message.')
+      if (key === 'return' && !(mods.every((m) => m === 'shift') && newLineIsSafe(i.target, focus)))
+        return ask('Pressing Return can submit a form or send a message.')
       if (mods.includes('cmd') && key === 'delete') return ask('⌘Delete moves items to the Trash or deletes them.')
       if (mods.includes('cmd') && key === 'q') return ask('This quits an app or logs you out.')
       if (key === 'd' && mods.length === 2 && mods.includes('cmd') && mods.includes('shift')) return ask('⇧⌘D sends the message in Mail.')

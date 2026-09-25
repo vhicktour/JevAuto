@@ -6,7 +6,8 @@ import { command, onUiEvent } from './events'
 import { Settings } from './Settings'
 import type { Speed } from '../../shared/motion'
 
-type Row = { act: UiAct; done?: UiDone }
+/** A step the agent took, or something you told it while it worked. */
+type Row = { key: string; act: UiAct; done?: UiDone } | { key: string; note: string }
 type Access = { accessibility: boolean; screenRecording: boolean }
 
 const STATE_LABEL: Record<UiStatus['state'], string> = { idle: 'Ready', working: 'Working', 'needs-you': 'Needs you', error: 'Error', done: 'Done', stopped: 'Stopped' }
@@ -25,22 +26,29 @@ export function Activity() {
   const [watch, setWatch] = useState(true)
   const [model, setModel] = useState('')
   const [speed, setSpeed] = useState<Speed>('balanced')
+  const [auto, setAuto] = useState(false)
   const [models, setModels] = useState<{ id: string; label: string }[]>([])
   const [showSettings, setShowSettings] = useState(false)
+  const [queue, setQueue] = useState<string[]>([])
   const list = useRef<HTMLOListElement>(null)
+  const wasBusy = useRef(false)
 
   useEffect(() => {
     void command<string[]>({ type: 'status' }).then(setLog)
-    void command<{ watch: boolean; model: string; speed: Speed; models: { id: string; label: string }[] }>({ type: 'settings' }).then((s) => {
+    void command<{ watch: boolean; model: string; speed: Speed; auto: boolean; models: { id: string; label: string }[] }>({ type: 'settings' }).then((s) => {
       setWatch(s.watch)
       setModel(s.model)
       setSpeed(s.speed)
+      setAuto(s.auto)
       setModels(s.models)
     })
     return onUiEvent((e) => {
       if (e.type === 'status-line') setLog((l) => [...l.slice(-199), e.line])
       else if (e.type === 'permissions') setAccess({ accessibility: e.accessibility, screenRecording: e.screenRecording })
       else if (e.type === 'status') {
+        const busyNow = ['working', 'needs-you'].includes(e.status.state)
+        if (busyNow && !wasBusy.current) setRows([]) // a new run starts a new list
+        wasBusy.current = busyNow
         setStatus(e.status)
         // A run that ended (or an agent that died) leaves nothing to answer.
         if (!['working', 'needs-you'].includes(e.status.state)) {
@@ -48,8 +56,9 @@ export function Activity() {
           setQuestion(null)
         }
       }
-      else if (e.type === 'act') setRows((r) => [...r.slice(-79), { act: e.act }])
-      else if (e.type === 'done') setRows((r) => r.map((row) => (row.act.id === e.done.id ? { ...row, done: e.done } : row)))
+      else if (e.type === 'act') setRows((r) => [...r.slice(-79), { key: e.act.id, act: e.act }])
+      else if (e.type === 'done') setRows((r) => r.map((row) => ('act' in row && row.act.id === e.done.id ? { ...row, done: e.done } : row)))
+      else if (e.type === 'queue') setQueue(e.tasks)
       else if (e.type === 'approval') setApproval(e.approval)
       else if (e.type === 'approval-closed') setApproval((a) => (a?.id === e.id ? null : a))
       else if (e.type === 'question') setQuestion(e.question)
@@ -58,6 +67,7 @@ export function Activity() {
         setWatch(e.watch)
         setModel(e.model)
         setSpeed(e.speed)
+        setAuto(e.auto)
       }
     })
   }, [])
@@ -66,13 +76,25 @@ export function Activity() {
   }, [rows.length])
 
   const busy = status.state === 'working' || status.state === 'needs-you'
+  const typed = task.trim()
   const run = () => {
-    const text = task.trim()
-    if (!text || busy) return
-    setRows([])
-    void command({ type: 'task', text })
+    if (!typed || busy) return
+    void command({ type: 'task', text: typed })
     setTask('')
   }
+  /** While a task runs: tell it something now (steer), or line up the next task (queue). */
+  const steer = () => {
+    if (!typed) return
+    void command({ type: 'steer', text: typed })
+    setRows((r) => [...r.slice(-79), { key: `note-${Date.now()}`, note: typed }])
+    setTask('')
+  }
+  const queueNext = () => {
+    if (!typed) return
+    void command({ type: 'task', text: typed, when: 'next' })
+    setTask('')
+  }
+  const submit = () => (busy ? steer() : run())
   return (
     <main className="activity">
       <header className="activity-header">
@@ -82,6 +104,11 @@ export function Activity() {
           <i />
           {STATE_LABEL[status.state]}
         </span>
+        {auto && (
+          <button type="button" className="auto-badge" title="Full auto is on: JevAuto doesn’t stop to ask. Change it in Settings." onClick={() => setShowSettings(true)}>
+            Full auto
+          </button>
+        )}
         <button
           type="button"
           className={`gear${showSettings ? ' is-on' : ''}`}
@@ -102,7 +129,7 @@ export function Activity() {
         className="composer"
         onSubmit={(e) => {
           e.preventDefault()
-          run()
+          submit()
         }}
       >
         <textarea
@@ -111,15 +138,37 @@ export function Activity() {
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault()
-              run()
+              submit()
             }
           }}
-          placeholder="What should JevAuto do? For example: in Notes, start a checklist with milk, eggs and bread."
+          placeholder={
+            busy
+              ? 'Tell JevAuto more while it works (Steer), or line up the next task (Queue).'
+              : 'What should JevAuto do? For example: in Notes, start a checklist with milk, eggs and bread.'
+          }
           aria-label="Task"
           rows={2}
           maxLength={2000}
-          disabled={busy}
         />
+        {busy ? (
+          <div className="composer-row">
+            <span className="composer-hint">{typed ? 'Steer tells this task · Queue runs it next' : 'Working… Stop is also on the island'}</span>
+            {typed ? (
+              <>
+                <button type="button" className="button" onClick={queueNext}>
+                  Queue
+                </button>
+                <button type="submit" className="button button--primary">
+                  Steer
+                </button>
+              </>
+            ) : (
+              <button type="button" className="button button--stop" onClick={() => void command({ type: 'stop' })}>
+                Stop
+              </button>
+            )}
+          </div>
+        ) : (
         <div className="composer-row">
           <button
             type="button"
@@ -155,19 +204,28 @@ export function Activity() {
             </select>
           )}
           <span className="composer-hint">Return runs it · ⌃⌥Space from anywhere</span>
-          {busy ? (
-            <button type="button" className="button button--stop" onClick={() => void command({ type: 'stop' })}>
-              Stop
-            </button>
-          ) : (
-            <button type="submit" className="button button--primary" disabled={!task.trim()}>
-              Run
-            </button>
-          )}
+          <button type="submit" className="button button--primary" disabled={!typed}>
+            Run
+          </button>
         </div>
+        )}
       </form>
 
-      {approval && <ApprovalCard approval={approval} />}
+      {queue.length > 0 && (
+        <ol className="queue" aria-label="Queued tasks">
+          {queue.map((q, i) => (
+            <li key={`${i}-${q}`}>
+              <span className="queue-when">{i === 0 ? 'Next' : 'Then'}</span>
+              <span className="queue-text">{q}</span>
+              <button type="button" className="queue-remove" aria-label={`Remove “${q}” from the queue`} onClick={() => void command({ type: 'unqueue', index: i })}>
+                ×
+              </button>
+            </li>
+          ))}
+        </ol>
+      )}
+
+      {approval && <ApprovalCard key={approval.id} approval={approval} />}
       {question && <QuestionCard key={question.id} question={question} />}
 
       <section className="card">
@@ -191,14 +249,23 @@ export function Activity() {
           <p className="empty">Nothing yet. Type a task above, or run the demo.</p>
         ) : (
           <ol ref={list} className="timeline">
-            {rows.map(({ act, done }) => (
-              <li key={act.id} className={`timeline-row${done ? (done.ok ? ' is-ok' : ' is-failed') : ' is-running'}`}>
-                <span className="timeline-glyph">{GLYPH[act.verb]}</span>
-                <span className="timeline-text">{narrate(act, true)}</span>
-                <span className="timeline-meta">{done ? `${(done.ms / 1000).toFixed(1)} s` : ''}</span>
-                <span className="timeline-state" />
-              </li>
-            ))}
+            {rows.map((row) =>
+              'note' in row ? (
+                <li key={row.key} className="timeline-row is-note">
+                  <span className="timeline-glyph">“</span>
+                  <span className="timeline-text">You: {row.note}</span>
+                  <span className="timeline-meta" />
+                  <span className="timeline-state" />
+                </li>
+              ) : (
+                <li key={row.key} className={`timeline-row${row.done ? (row.done.ok ? ' is-ok' : ' is-failed') : ' is-running'}`}>
+                  <span className="timeline-glyph">{GLYPH[row.act.verb]}</span>
+                  <span className="timeline-text">{narrate(row.act, true)}</span>
+                  <span className="timeline-meta">{row.done ? `${(row.done.ms / 1000).toFixed(1)} s` : ''}</span>
+                  <span className="timeline-state" />
+                </li>
+              ),
+            )}
           </ol>
         )}
       </section>
@@ -221,24 +288,39 @@ export function Activity() {
   )
 }
 
+/** The Edit path (spec §9): a typing step shows its text, and what you allow is what gets typed. */
 function ApprovalCard({ approval }: { approval: UiApproval }) {
-  const answer = (value: 'once' | 'run' | 'deny') => void command({ type: 'answer', id: approval.id, answer: value })
+  const [draft, setDraft] = useState(approval.text ?? '')
+  const edited = approval.text !== undefined && draft !== approval.text
+  const answer = (value: 'once' | 'run' | 'always' | 'deny') =>
+    void command({ type: 'answer', id: approval.id, answer: value, ...(edited && value !== 'deny' ? { text: draft } : {}) })
   return (
     <section className="card card--attention" role="alertdialog" aria-label={approval.title}>
       <h2>Needs your OK</h2>
       <p className="attention-title">{approval.title}</p>
       <p className="attention-reason">{approval.reason}</p>
+      {approval.text !== undefined && (
+        <label className="attention-edit">
+          <span>It will type this. Change it first if you like.</span>
+          <textarea className="attention-input" value={draft} onChange={(e) => setDraft(e.target.value)} rows={3} maxLength={4000} spellCheck={false} />
+        </label>
+      )}
       <div className="attention-actions">
         <button type="button" className="button" onClick={() => answer('deny')}>
           Deny
         </button>
         {approval.offersRun && (
           <button type="button" className="button" onClick={() => answer('run')}>
-            Allow for this task
+            For this task
+          </button>
+        )}
+        {approval.offersAlways && (
+          <button type="button" className="button" onClick={() => answer('always')}>
+            Always for {approval.app}
           </button>
         )}
         <button type="button" className="button button--amber" onClick={() => answer('once')}>
-          Allow once
+          {edited ? 'Type my version' : 'Allow once'}
         </button>
       </div>
     </section>

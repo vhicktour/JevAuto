@@ -40,13 +40,13 @@ const availableModels = () => MODELS.filter((m) => lastInit?.keys?.[m.key]).map(
 function settingsView() {
   const s = settings!.get()
   const set = Object.fromEntries(KEY_NAMES.map((k) => [k, Boolean(lastInit?.keys?.[k])]))
-  return { watch: s.watch, model: s.model, speed: s.speed, models: availableModels(), excluded: s.excluded, keys: set }
+  return { watch: s.watch, model: s.model, speed: s.speed, auto: s.auto, models: availableModels(), excluded: s.excluded, trusted: s.trusted, keys: set }
 }
 
 /** Every surface hears Watch mode, the model and the cursor speed whenever one of them changes. */
 function broadcastSettings() {
-  const { watch, model, speed } = settings!.get()
-  broadcast({ type: 'settings', watch, model, speed })
+  const { watch, model, speed, auto } = settings!.get()
+  broadcast({ type: 'settings', watch, model, speed, auto })
 }
 
 /** New keys reach the agent in its next init: restart it (between runs only). */
@@ -62,7 +62,7 @@ function diagnostics(): string {
   const set = KEY_NAMES.filter((k) => lastInit?.keys?.[k]).join(', ') || 'none'
   return [
     `JevAuto ${app.getVersion()} (${app.isPackaged ? 'packaged' : 'dev'}) · macOS ${release()} · ${process.arch}`,
-    `keys set: ${set} · model: ${settings?.get().model} · watch: ${settings?.get().watch} · speed: ${settings?.get().speed}`,
+    `keys set: ${set} · model: ${settings?.get().model} · watch: ${settings?.get().watch} · speed: ${settings?.get().speed} · full auto: ${settings?.get().auto}`,
     ...status.slice(-60).filter((line) => !/sk-|key=/i.test(line)),
   ].join('\n')
 }
@@ -86,14 +86,20 @@ const Command = z.discriminatedUnion('type', [
   z.object({ type: z.literal('stop') }),
   z.object({ type: z.literal('run'), spike: z.enum(['demo']) }),
   z.object({ type: z.literal('island-hit'), rect: z.object({ x: z.number(), y: z.number(), width: z.number(), height: z.number() }).nullable() }),
-  z.object({ type: z.literal('task'), text: z.string().trim().min(1).max(2000) }),
-  z.object({ type: z.literal('answer'), id: z.string().min(1), answer: z.enum(['once', 'run', 'deny']) }),
+  /** `next` queues the task behind the one running; otherwise it starts now. */
+  z.object({ type: z.literal('task'), text: z.string().trim().min(1).max(2000), when: z.enum(['now', 'next']).default('now') }),
+  z.object({ type: z.literal('unqueue'), index: z.number().int().min(0).max(9) }),
+  z.object({ type: z.literal('steer'), text: z.string().trim().min(1).max(2000) }),
+  /** `text`: what a typing step should type instead, when you edited it. */
+  z.object({ type: z.literal('answer'), id: z.string().min(1), answer: z.enum(['once', 'run', 'always', 'deny']), text: z.string().max(4000).optional() }),
+  z.object({ type: z.literal('untrust'), id: z.string().min(1).max(300) }),
   z.object({ type: z.literal('reply'), id: z.string().min(1), text: z.string().max(4000).nullable() }),
   z.object({ type: z.literal('command-bar'), open: z.boolean() }),
   z.object({ type: z.literal('settings') }),
   z.object({ type: z.literal('watch'), on: z.boolean() }),
   z.object({ type: z.literal('model'), id: z.enum(MODELS.map((m) => m.id) as [ModelId, ...ModelId[]]) }),
   z.object({ type: z.literal('speed'), speed: z.enum(SPEEDS) }),
+  z.object({ type: z.literal('auto'), on: z.boolean() }),
   z.object({ type: z.literal('set-key'), name: z.enum(KEY_NAMES as [KeyName, ...KeyName[]]), value: z.string().max(500) }),
   z.object({ type: z.literal('set-excluded'), apps: z.array(z.string().trim().min(1).max(200)).max(100) }),
   z.object({ type: z.literal('open-privacy'), pane: z.enum(['accessibility', 'screen']) }),
@@ -107,14 +113,40 @@ ipcMain.handle('jevauto:command', (event, raw: unknown) => {
   const command = parsed.data
   if (command.type === 'status') return { ok: true, value: status }
   if (command.type === 'settings') return { ok: true, value: settingsView() }
-  if (command.type === 'watch' || command.type === 'model' || command.type === 'speed') {
-    settings!.update(command.type === 'watch' ? { watch: command.on } : command.type === 'model' ? { model: command.id } : { speed: command.speed })
+  if (command.type === 'watch' || command.type === 'model' || command.type === 'speed' || command.type === 'auto') {
+    settings!.update(
+      command.type === 'watch' ? { watch: command.on }
+      : command.type === 'model' ? { model: command.id }
+      : command.type === 'speed' ? { speed: command.speed }
+      : { auto: command.on },
+    )
     broadcastSettings()
-    return { ok: true, value: null }
+    return { ok: true, value: settingsView() }
   }
   if (command.type === 'set-excluded') {
     settings!.update({ excluded: command.apps })
     return { ok: true, value: settingsView() }
+  }
+  if (command.type === 'untrust') {
+    settings!.update({ trusted: settings!.get().trusted.filter((t) => t.id !== command.id) })
+    return { ok: true, value: settingsView() }
+  }
+  if (command.type === 'steer') {
+    if (!run || !supervisor) return { ok: false, error: 'Nothing is running.' }
+    supervisor.steer(command.text)
+    emit(`You told JevAuto: ${command.text}`)
+    return { ok: true, value: null }
+  }
+  if (command.type === 'task' && command.when === 'next' && run) {
+    if (queue.length >= QUEUE_MAX) return { ok: false, error: `At most ${QUEUE_MAX} tasks can wait.` }
+    queue.push(command.text)
+    broadcast({ type: 'queue', tasks: [...queue] })
+    return { ok: true, value: null }
+  }
+  if (command.type === 'unqueue') {
+    queue.splice(command.index, 1)
+    broadcast({ type: 'queue', tasks: [...queue] })
+    return { ok: true, value: null }
   }
   if (command.type === 'set-key') {
     keys!.set(command.name, command.value)
@@ -132,7 +164,7 @@ ipcMain.handle('jevauto:command', (event, raw: unknown) => {
   if (command.type === 'stop') stopWork()
   else if (command.type === 'run') void startRun(command.spike)
   else if (command.type === 'task') void startTask(command.text)
-  else if (command.type === 'answer') supervisor?.reply(command.id, { answer: command.answer })
+  else if (command.type === 'answer') supervisor?.reply(command.id, { answer: command.answer, ...(command.text !== undefined ? { text: command.text } : {}) })
   else if (command.type === 'reply') supervisor?.reply(command.id, { text: command.text })
   else if (command.type === 'command-bar') ui?.showCommandBar(command.open)
   else ui?.setIslandHit(command.rect)
@@ -140,6 +172,7 @@ ipcMain.handle('jevauto:command', (event, raw: unknown) => {
 })
 
 const Closed = z.object({ id: z.string() })
+const Trust = z.object({ id: z.string().min(1).max(300), app: z.string().min(1).max(200) })
 
 /** Agent `ui.*` events go to every surface once they match the schema; anything else is logged. */
 function relay(name: string, data: unknown) {
@@ -154,6 +187,13 @@ function relay(name: string, data: unknown) {
     : name === 'ui.approval-closed' && closed.success ? { type: 'approval-closed', id: closed.data.id }
     : name === 'ui.question-closed' && closed.success ? { type: 'question-closed', id: closed.data.id }
     : undefined
+  const trust = name === 'ui.trust' ? Trust.safeParse(data) : undefined
+  if (trust?.success) {
+    const { id, app } = trust.data
+    settings!.update({ trusted: [...settings!.get().trusted.filter((t) => t.id !== id), { id, app }].slice(-100) })
+    emit(`JevAuto will bring ${app} forward for shortcuts without asking. Change this in Settings.`)
+    return
+  }
   if (event) broadcast(event)
   // A picture that fails the schema is dropped unseen: screenshots never go into the log (or diagnostics).
   else emit(name === 'ui.view' ? 'agent event ui.view dropped: not a valid picture' : `agent event ${name}: ${JSON.stringify(data).slice(0, 300)}`)
@@ -269,7 +309,11 @@ async function startRun(name: SpikeName) {
   }
 }
 
-type RunOutcome = { status: string; summary: string; actions: number; turns: number; usd: number; ms: number; log: string }
+type RunOutcome = { status: string; summary: string; actions: number; turns: number; usd: number; ms: number; log: string; unheard?: string[] }
+
+/** Tasks you queued behind the running one (spec §9: steer vs. queue). Stop clears them. */
+let queue: string[] = []
+const QUEUE_MAX = 10
 
 /** A task you typed: the agent's loop runs it; its status events drive the island and the activity window. */
 async function startTask(task: string) {
@@ -280,14 +324,19 @@ async function startTask(task: string) {
   }
   const controller = new AbortController()
   run = controller
-  const { watch, model, excluded, speed } = settings!.get()
+  const { watch, model, excluded, speed, trusted, auto } = settings!.get()
   // In Watch mode JevAuto's own window steps aside so it never covers the app being worked in; the island stays.
   const stepAside = watch && ui?.activity.isVisible() === true
   if (stepAside) ui?.activity.hide()
   broadcast({ type: 'status', status: { state: 'working', title: task } })
   try {
-    const r = await supervisor.request<RunOutcome>('agent.run', { task, watch, model, excluded, speed }, { signal: controller.signal })
+    const r = await supervisor.request<RunOutcome>(
+      'agent.run',
+      { task, watch, model, excluded, speed, auto, trusted: trusted.map((t) => t.id) },
+      { signal: controller.signal },
+    )
     emit(`${r.status}: ${r.summary} (${r.actions} actions, ${r.turns} turns, ${(r.ms / 1000).toFixed(1)} s, $${r.usd.toFixed(3)}) · log ${r.log}`)
+    for (const said of r.unheard ?? []) emit(`The task finished before JevAuto read: ${said}`)
   } catch (error) {
     if (!controller.signal.aborted) {
       const message = error instanceof Error ? error.message : String(error)
@@ -297,6 +346,12 @@ async function startTask(task: string) {
   } finally {
     if (run === controller) run = undefined
     if (stepAside) ui?.activity.showInactive()
+    // The next queued task starts once this one is over, however it ended; Stop has already emptied the queue.
+    const next = queue.shift()
+    if (next !== undefined) {
+      broadcast({ type: 'queue', tasks: [...queue] })
+      setTimeout(() => void startTask(next), 600)
+    }
   }
 }
 
@@ -311,6 +366,8 @@ function haltAgent() {
 /** Stop: cancel the run at once, then halt the agent. */
 function stopWork() {
   if (!run) return
+  queue = []
+  broadcast({ type: 'queue', tasks: [] })
   run.abort()
   broadcast({ type: 'status', status: { state: 'stopped', title: 'Stopped' } })
   emit('Stop: run cancelled; the agent is killed in 250 ms so queued input stops too.')

@@ -3,6 +3,8 @@ export type Limit = 'actions' | 'time' | 'cost'
 
 /** Spec §11: a default per run, extended only when you say so. */
 export const DEFAULT_BUDGET: Budget = { maxActions: 40, maxMs: 6 * 60_000, maxUsd: 1 }
+/** Full auto never asks to extend, so it starts larger and stops there. */
+export const FULL_AUTO_BUDGET: Budget = { maxActions: 150, maxMs: 20 * 60_000, maxUsd: 3 }
 
 /** Counts actions, active time and dollars. Time spent waiting for you (approvals, questions) is not counted. */
 export class Meter {

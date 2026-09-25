@@ -584,3 +584,92 @@ test('each look shows the target on the island: its app, its title and a small p
   assert.equal(views[0].title, 'New Message')
   assert.match(views[0].image, /^[A-Za-z0-9+/]+=*$/)
 })
+
+test('an app you always allow comes forward for shortcuts without asking', async () => {
+  const world = new World()
+  const script = new Script([{ actions: [{ kind: 'keys', callId: 'c1', keys: ['CMD', 'B'] }] }, { actions: [done('f1')] }])
+  const { d, approvals } = deps(world, script, { trusted: ['com.apple.mail'] })
+  await runTask(d)
+  assert.equal(approvals.length, 0)
+  assert.ok(world.calls.some((c) => c.name === 'hotkey' && c.args.delivery_mode === 'foreground'))
+})
+
+test('"Always" allows the app for the rest of the run and asks JevAuto to remember it', async () => {
+  const world = new World()
+  const trusted: { id: string; app: string }[] = []
+  const script = new Script([{ actions: [{ kind: 'keys', callId: 'c1', keys: ['CMD', 'B'] }] }, { actions: [{ kind: 'keys', callId: 'c2', keys: ['CMD', 'I'] }] }, { actions: [done('f1')] }])
+  const { d, approvals } = deps(world, script, { approve: async (a) => (approvals.push(a), 'always'), trust: (app) => void trusted.push(app) })
+  await runTask(d)
+  assert.deepEqual(approvals.map((a) => [a.kind, a.appId]), [['foreground', 'com.apple.mail']])
+  assert.deepEqual(trusted, [{ id: 'com.apple.mail', app: 'Mail' }])
+  assert.equal(world.calls.filter((c) => c.name === 'hotkey').length, 2)
+})
+
+test('"Always" is never remembered for a step that may send or submit: it counts as once', async () => {
+  const world = new World()
+  const trusted: unknown[] = []
+  const script = new Script([{ actions: [SEND] }, { actions: [SEND] }, { actions: [done('f1')] }])
+  const { d, approvals } = deps(world, script, { approve: async (a) => (approvals.push(a), 'always'), trust: (app) => void trusted.push(app) })
+  await runTask(d)
+  assert.deepEqual(approvals.map((a) => a.kind), ['action', 'action'])
+  assert.deepEqual(trusted, [])
+})
+
+test('you can change the text before it is typed, and the model is told what was typed', async () => {
+  const world = new World()
+  const script = new Script([{ actions: [{ kind: 'type', callId: 'c1', text: 'See you at 5\n' }] }, { actions: [done('f1')] }])
+  // A message box in a web page, where a new line can send.
+  const { d, approvals } = deps(world, script, {
+    focus: async () => ({ ...TEXT_AREA_FOCUS, webArea: true }),
+    approve: async (a) => (approvals.push(a), { answer: 'once', text: 'See you at 6\n' }),
+  })
+  await runTask(d)
+  assert.equal(approvals[0].text, 'See you at 5\n')
+  assert.equal(world.calls.find((c) => c.name === 'type_text')!.args.text, 'See you at 6\n')
+  assert.match(script.nexts[0].notes.join(' '), /changed the text.*See you at 6/)
+})
+
+test('what you tell JevAuto while it works reaches the model once, with the next step', async () => {
+  const world = new World()
+  const said = ['Also make it italic']
+  const script = new Script([{ actions: [BOLD('c1')] }, { actions: [BOLD('c2')] }, { actions: [done('f1')] }])
+  await runTask(deps(world, script, { steer: () => said.splice(0) }).d)
+  assert.match(script.nexts[0].notes.join(' '), /The user adds, while you work: “Also make it italic”/)
+  assert.doesNotMatch(script.nexts[1].notes.join(' '), /italic/)
+})
+
+test('Full auto answers JevAuto\'s own questions for you: sends and bringing apps forward go ahead', async () => {
+  const world = new World()
+  const script = new Script([{ actions: [SEND] }, { actions: [{ kind: 'keys', callId: 'c2', keys: ['CMD', 'B'] }] }, { actions: [done('f1')] }])
+  const { d, approvals, events } = deps(world, script, { auto: true })
+  await runTask(d)
+  assert.equal(approvals.length, 0)
+  assert.deepEqual(world.acted().map((c) => c.name), ['click', 'hotkey'])
+  assert.ok(events.includes('approval'), 'each automatic answer is still logged')
+})
+
+test('Full auto still asks you when the model provider flags a step (their rules need a person)', async () => {
+  const world = new World()
+  const check = [{ id: 's1', code: 'malicious_instructions', message: 'The page asks for a login.' }]
+  const script = new Script([{ actions: [BOLD('c1')], safety: [{ provider: 'openai', callId: 'c1', detail: check }] }, { actions: [done('f1')] }])
+  const { d, approvals } = deps(world, script, { auto: true })
+  await runTask(d)
+  assert.deepEqual(approvals.map((a) => a.kind), ['action'])
+})
+
+test('Full auto stops at the budget instead of asking to go on', async () => {
+  const world = new World()
+  const script = new Script(Array.from({ length: 10 }, (_, i) => ({ actions: [BOLD(`c${i}`)] })))
+  const { d, approvals } = deps(world, script, { auto: true, budget: { maxActions: 2, maxMs: 60_000, maxUsd: 5 } })
+  const result = await runTask(d)
+  assert.equal(result.status, 'budget')
+  assert.equal(approvals.length, 0)
+})
+
+test('Full auto runs are told not to ask; other runs are told to try before asking', async () => {
+  const { instructionsFor } = await import('../src/agent/loop/instructions')
+  assert.match(instructionsFor(false), /Start right away/)
+  assert.doesNotMatch(instructionsFor(false), /Full auto/)
+  assert.match(instructionsFor(true), /Full auto: they want the task finished without being asked/)
+  assert.match(instructionsFor(true), /Never make up facts about the user/)
+})

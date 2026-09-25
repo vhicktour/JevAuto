@@ -85,3 +85,23 @@ test('cancel ends a wait for a reply at once', async () => {
   await tick()
   assert.ok(out.some((m) => m.type === 'result' && m.id === '7' && m.value.reply === 'none'))
 })
+
+test('what you tell the running task is handed over once, in order; blank or oversized notes are dropped', async () => {
+  const { p, out, send } = port()
+  createAgent(p, {
+    ping: async (_params, ctx) => {
+      await ctx.waitReply('go', 1_000)
+      return { first: ctx.takeSteers(), second: ctx.takeSteers() }
+    },
+  })
+  send(init)
+  send({ type: 'request', id: '8', method: 'ping', params: {} })
+  send({ type: 'steer', text: 'Also make it italic' })
+  send({ type: 'steer', text: '   ' })
+  send({ type: 'steer', text: 'x'.repeat(2001) })
+  send({ type: 'steer', text: 'and underline it' })
+  send({ type: 'reply', id: 'go', answer: 'once' })
+  await tick()
+  const result = out.find((m) => m.type === 'result' && m.id === '8')
+  assert.deepEqual(result.value, { first: ['Also make it italic', 'and underline it'], second: [] })
+})

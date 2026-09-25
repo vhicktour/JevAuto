@@ -40,14 +40,19 @@ export const UiStatus = z.object({
 })
 export type UiStatus = z.infer<typeof UiStatus>
 
-/** A step waiting for your OK (spec §8). `offersRun` adds "for this run" (foreground delivery only). */
+/**
+ * A step waiting for your OK (spec §8). `offersRun` adds "for this task" and `offersAlways` "always for this app"
+ * (foreground delivery only); `text` is what a typing step would type, which you may edit before allowing it.
+ */
 export const UiApproval = z.object({
   id: z.string(),
   kind: z.enum(['action', 'foreground', 'budget']),
   title: z.string(),
   reason: z.string(),
   app: z.string().optional(),
+  text: z.string().max(4000).optional(),
   offersRun: z.boolean(),
+  offersAlways: z.boolean().optional(),
 })
 export type UiApproval = z.infer<typeof UiApproval>
 
@@ -74,7 +79,9 @@ export const UiEvent = z.discriminatedUnion('type', [
   z.object({ type: z.literal('question'), question: UiQuestion }),
   z.object({ type: z.literal('question-closed'), id: z.string() }),
   z.object({ type: z.literal('view'), view: UiView }),
-  /** Watch mode (each target comes to the front so the cursor can be seen working), the model and the cursor speed. */
-  z.object({ type: z.literal('settings'), watch: z.boolean(), model: z.string(), speed: z.enum(SPEEDS) }),
+  /** Tasks waiting to run after the current one, in order. */
+  z.object({ type: z.literal('queue'), tasks: z.array(z.string().max(2000)).max(10) }),
+  /** Watch mode (each target comes to the front so the cursor can be seen working), the model, the cursor speed and Full auto. */
+  z.object({ type: z.literal('settings'), watch: z.boolean(), model: z.string(), speed: z.enum(SPEEDS), auto: z.boolean() }),
 ])
 export type UiEvent = z.infer<typeof UiEvent>

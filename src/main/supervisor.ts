@@ -94,6 +94,11 @@ export class Supervisor {
     this.child?.postMessage({ type: 'reply', id, ...reply })
   }
 
+  /** Something you tell the running task. */
+  steer(text: string): void {
+    this.child?.postMessage({ type: 'steer', text })
+  }
+
   /** Stop's backstop (spec §8): the in-process driver dies with the agent. A deliberate kill restarts at once and never counts as a crash. */
   kill(): void {
     if (!this.child) return

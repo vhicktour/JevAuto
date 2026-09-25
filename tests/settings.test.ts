@@ -13,7 +13,7 @@ test('settings start from defaults, save what you change, and survive a restart'
   const a = new SettingsStore(d)
   assert.deepEqual(a.get(), DEFAULT_SETTINGS)
   a.update({ watch: false, model: 'gemini-3.8-flash', excluded: ['Slack', ' com.apple.mail '] })
-  assert.deepEqual(new SettingsStore(d).get(), { watch: false, model: 'gemini-3.8-flash', excluded: ['Slack', 'com.apple.mail'], speed: 'balanced' })
+  assert.deepEqual(new SettingsStore(d).get(), { watch: false, model: 'gemini-3.8-flash', excluded: ['Slack', 'com.apple.mail'], speed: 'balanced', auto: false, trusted: [] })
   assert.equal(statSync(join(d, 'settings.json')).mode & 0o777, 0o600)
 })
 
@@ -21,10 +21,16 @@ test('the cursor speed is saved; a settings file from before it existed keeps it
   const d = dir()
   writeFileSync(join(d, 'settings.json'), JSON.stringify({ watch: false, model: 'gemini-3.8-flash', excluded: ['Slack'] }))
   const s = new SettingsStore(d)
-  assert.deepEqual(s.get(), { watch: false, model: 'gemini-3.8-flash', excluded: ['Slack'], speed: 'balanced' })
+  assert.deepEqual(s.get(), { watch: false, model: 'gemini-3.8-flash', excluded: ['Slack'], speed: 'balanced', auto: false, trusted: [] })
   s.update({ speed: 'teach' })
   assert.equal(new SettingsStore(d).get().speed, 'teach')
   assert.throws(() => s.update({ speed: 'warp' as never }))
+})
+
+test('apps you always allow are kept until you remove them', () => {
+  const d = dir()
+  new SettingsStore(d).update({ trusted: [{ id: 'com.apple.TextEdit', app: 'TextEdit' }] })
+  assert.deepEqual(new SettingsStore(d).get().trusted, [{ id: 'com.apple.TextEdit', app: 'TextEdit' }])
 })
 
 test('a broken or tampered settings file falls back to defaults instead of crashing', () => {
@@ -58,4 +64,11 @@ test('keys are stored encrypted, reported only as set or not set, and cleared wi
 test('without the Keychain nothing is written in the clear', () => {
   const keys = new KeyStore(dir(), { ...crypter, available: () => false })
   assert.throws(() => keys.set('openai', 'sk-x'), /Keychain/)
+})
+
+test('Full auto is off until you turn it on, and stays as you left it', () => {
+  const d = dir()
+  assert.equal(new SettingsStore(d).get().auto, false)
+  new SettingsStore(d).update({ auto: true })
+  assert.equal(new SettingsStore(d).get().auto, true)
 })

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { command } from './events'
 
-type View = { excluded: string[]; keys: Record<string, boolean> }
+type View = { auto: boolean; excluded: string[]; trusted: { id: string; app: string }[]; keys: Record<string, boolean> }
 const KEYS: { name: string; label: string; hint: string }[] = [
   { name: 'openai', label: 'OpenAI', hint: 'GPT-6 models' },
   { name: 'google', label: 'Gemini', hint: 'Gemini models' },
@@ -86,6 +86,48 @@ export function Settings({ access }: { access: { accessibility: boolean; screenR
             Save list
           </button>
         </div>
+      </section>
+
+      <section className={`card${view.auto ? ' card--auto' : ''}`}>
+        <div className="card-title">
+          <h2>Full auto</h2>
+          <button
+            type="button"
+            className={`watch-toggle auto-toggle${view.auto ? ' is-on' : ''}`}
+            aria-pressed={view.auto}
+            onClick={async () => load(await command<View>({ type: 'auto', on: !view.auto }))}
+          >
+            <i />
+            {view.auto ? 'On' : 'Off'}
+          </button>
+        </div>
+        <p className="settings-hint">
+          JevAuto stops asking: it sends, submits, buys and deletes when the task calls for it, brings apps forward on its own, and stops at a larger budget (150 actions, 20
+          minutes, $3) instead of asking to go on.
+        </p>
+        <p className="settings-hint">
+          Still refused: password fields, password managers, security prompts, JevAuto itself and the apps below. The model provider’s own safety checks still ask you. A web page
+          can try to steer the agent, so use Full auto for tasks you are happy to let it finish alone.
+        </p>
+      </section>
+
+      <section className="card">
+        <h2>Allowed to come forward</h2>
+        <p className="settings-hint">Apps you answered “Always” for. JevAuto brings them to the front for shortcuts without asking.</p>
+        {view.trusted.length === 0 ? (
+          <p className="settings-hint">None yet.</p>
+        ) : (
+          <ul className="trusted">
+            {view.trusted.map((t) => (
+              <li key={t.id}>
+                <span>{t.app}</span>
+                <button type="button" className="button button--quiet" onClick={async () => load(await command<View>({ type: 'untrust', id: t.id }))}>
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <section className="card">

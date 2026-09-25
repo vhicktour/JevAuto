@@ -7,8 +7,8 @@ import { onUiEvent, reducedMotion } from './events'
 
 type Box = { x: number; y: number; width: number; height: number }
 type Ripple = { key: number; at: Point }
-/** `n` numbers the step in Teach mode. */
-type Chip = { key: string; act: UiAct; keys?: string[]; n?: number }
+/** `n` numbers the step in Teach mode; `done` is the check the cursor shows when the task is finished. */
+type Chip = { key: string; act?: UiAct; keys?: string[]; n?: number; done?: boolean }
 type Trail = { key: number; points: string }
 
 /** This overlay's display, in screen points; main passes it in the query (ox, oy, ow, oh). */
@@ -175,14 +175,16 @@ export function Overlay() {
       if (s.state === 'needs-you') setTint('amber')
       else if (s.state === 'error') setTint('coral')
       else if (s.state === 'working') setTint('cyan')
-      if (s.state === 'done' || s.state === 'stopped' || s.state === 'idle') {
+      // The run is over: the cursor goes back into the island (after a failure it lingers, coral, where it stopped).
+      if (s.state === 'done' || s.state === 'stopped' || s.state === 'idle' || s.state === 'error') {
         steps.current = 0
         clearLater()
+        if (s.state === 'done' && at.current) setChip({ key: 'done', done: true })
         later(() => {
           setOutline(null)
           setChip(null)
           if (at.current) travel(home, () => later(hide, 180))
-        }, s.state === 'stopped' ? 0 : 900)
+        }, s.state === 'stopped' ? 0 : s.state === 'error' ? 1600 : 900)
       }
     }
     const off = onUiEvent((e) => {
@@ -222,7 +224,12 @@ export function Overlay() {
         {chip && (
           <div key={chip.key} className={`cursor-chip cursor-chip--${tint}`}>
             {chip.n !== undefined && <b className="cursor-chip-step">{chip.n}</b>}
-            {chip.keys ? (
+            {chip.done || !chip.act ? (
+              <>
+                <b className="cursor-chip-check">✓</b>
+                Done
+              </>
+            ) : chip.keys ? (
               chip.keys.map((k, i) => <kbd key={i}>{k}</kbd>)
             ) : chip.act.verb === 'type' ? (
               <>

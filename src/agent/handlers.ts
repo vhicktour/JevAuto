@@ -5,8 +5,9 @@ import type { AgentMethod } from '../shared/protocol'
 import { PHASE0_MODELS } from '../shared/constants'
 import { SPEEDS } from '../shared/motion'
 import { readFocus, readFrontmost } from '../shared/native'
-import { INSTRUCTIONS } from './loop/instructions'
-import { runTask, type Answer } from './loop/run'
+import { instructionsFor } from './loop/instructions'
+import { FULL_AUTO_BUDGET } from './loop/budget'
+import { runTask, type Decision } from './loop/run'
 import { RunLog } from './loop/runlog'
 import { jevShadow } from './jev/shadow'
 import { DEVELOPER_APPS } from './loop/targets'
@@ -44,15 +45,22 @@ const AgentRun = z.object({
   model: z.string().min(1).default(PHASE0_MODELS.openai),
   excluded: z.array(z.string()).max(100).default([]),
   speed: z.enum(SPEEDS).default('balanced'),
+  /** Apps you always allow to come forward for shortcuts (Settings). */
+  trusted: z.array(z.string().min(1).max(300)).max(100).default([]),
+  /** Full auto (Settings): JevAuto answers its own questions; see RunDeps.auto. */
+  auto: z.boolean().default(false),
 })
+/** Typed text longer than this is approved as shown, not edited in place (the reply carries at most 4000 characters). */
+const EDITABLE_MAX = 4000
 /** Unanswered approvals expire as a no (spec §8); a question waits longer. */
 const APPROVAL_MS = 60_000
 const QUESTION_MS = 5 * 60_000
 
 /** Runs one task through the loop, asking you (through main, the island and the activity window) when it must. */
 async function agentRun(params: unknown, ctx: HandlerContext) {
-  const { task, watch, model, excluded, speed } = AgentRun.parse(params)
-  const adapter = adapterFor(model, INSTRUCTIONS, ctx.init.keys ?? {})
+  const { task, watch, model, excluded, speed, trusted, auto } = AgentRun.parse(params)
+  ctx.takeSteers() // anything said to a task that already ended is not for this one
+  const adapter = adapterFor(model, instructionsFor(auto), ctx.init.keys ?? {})
   const log = RunLog.open(ctx.init.runsDir, `${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}`)
   const mac = await visibleMac(ctx)
   // Watch mode waits for the cursor; so do Cinematic and Teach, whose whole point is that you can follow it.
@@ -65,12 +73,16 @@ async function agentRun(params: unknown, ctx: HandlerContext) {
       mac,
       focus: (pid, windowId) => (web?.isWeb(windowId) ? web.focus(windowId) : readFocus(ctx.init.nativeHelperPath, pid)).catch(() => 'unknown' as const),
       frontmost: () => readFrontmost(ctx.init.nativeHelperPath).catch(() => undefined),
-      approve: async (approval): Promise<Answer> => {
+      approve: async (approval): Promise<Decision> => {
         const id = randomUUID()
-        ctx.emit('ui.approval', { id, ...approval, offersRun: approval.kind === 'foreground' })
+        const { appId, text, ...shown } = approval
+        const editable = text !== undefined && text.length <= EDITABLE_MAX
+        const foreground = approval.kind === 'foreground'
+        ctx.emit('ui.approval', { id, ...shown, ...(editable ? { text } : {}), offersRun: foreground, offersAlways: foreground && appId !== undefined })
         const reply = await ctx.waitReply(id, APPROVAL_MS)
         ctx.emit('ui.approval-closed', { id })
-        return reply?.answer ?? 'deny'
+        const answer = reply?.answer ?? 'deny'
+        return editable && typeof reply?.text === 'string' ? { answer, text: reply.text } : answer
       },
       ask: async (question) => {
         const id = randomUUID()
@@ -87,6 +99,10 @@ async function agentRun(params: unknown, ctx: HandlerContext) {
       avoid: DEVELOPER_APPS,
       ...(web ? { web } : {}),
       ...(ctx.init.keys?.typesafe ? { shadow: jevShadow(ctx.init.keys.typesafe) } : {}),
+      trusted,
+      trust: (app) => ctx.emit('ui.trust', app),
+      steer: () => ctx.takeSteers(),
+      ...(auto ? { auto, budget: FULL_AUTO_BUDGET } : {}),
     })
     return { ...result, log: log.path }
   } finally {

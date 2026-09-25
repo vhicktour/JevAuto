@@ -115,7 +115,7 @@ export function Island() {
                 </span>
                 {expandable && <i className={`island-chevron${open ? ' is-open' : ''}`} />}
               </button>
-              {view.approval && <IslandActions id={view.approval.id} offersRun={view.approval.offersRun} />}
+              {view.approval && <IslandActions id={view.approval.id} offersRun={view.approval.offersRun} offersAlways={view.approval.offersAlways === true} />}
               {open && (
                 <div className="island-more" style={{ paddingBottom: MORE_PAD }}>
                   {picture && (
@@ -148,8 +148,8 @@ export function Island() {
   )
 }
 
-function IslandActions({ id, offersRun }: { id: string; offersRun: boolean }) {
-  const answer = (value: 'once' | 'run' | 'deny') => void command({ type: 'answer', id, answer: value })
+function IslandActions({ id, offersRun, offersAlways }: { id: string; offersRun: boolean; offersAlways: boolean }) {
+  const answer = (value: 'once' | 'run' | 'always' | 'deny') => void command({ type: 'answer', id, answer: value })
   return (
     <div className="island-actions" style={{ height: ACTIONS }}>
       <button type="button" className="island-button" onClick={() => answer('deny')}>
@@ -158,6 +158,11 @@ function IslandActions({ id, offersRun }: { id: string; offersRun: boolean }) {
       {offersRun && (
         <button type="button" className="island-button" onClick={() => answer('run')}>
           For this task
+        </button>
+      )}
+      {offersAlways && (
+        <button type="button" className="island-button" onClick={() => answer('always')}>
+          Always
         </button>
       )}
       <button type="button" className="island-button island-button--allow" onClick={() => answer('once')}>

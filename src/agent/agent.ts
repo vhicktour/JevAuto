@@ -10,6 +10,8 @@ export type HandlerContext = {
   emit(name: string, data: unknown): void
   /** Waits for your reply to something the handler asked (an approval, a question); undefined on timeout or cancel. */
   waitReply(id: string, timeoutMs: number): Promise<Reply | undefined>
+  /** What you told the running task since the last call, oldest first; each is returned once. */
+  takeSteers(): string[]
 }
 export type Handler = (params: unknown, ctx: HandlerContext) => Promise<unknown>
 
@@ -21,6 +23,7 @@ export function createAgent(
   let init: AgentInit | undefined
   const running = new Map<string, AbortController>()
   const waiting = new Map<string, (reply: Reply) => void>()
+  const steers: string[] = []
   port.on('message', async ({ data }) => {
     const parsed = HostToAgent.safeParse(data)
     if (!parsed.success) return
@@ -37,6 +40,10 @@ export function createAgent(
     if (message.type === 'reply') {
       const { type: _type, id, ...reply } = message
       waiting.get(id)?.(reply)
+      return
+    }
+    if (message.type === 'steer') {
+      if (steers.length < 20) steers.push(message.text)
       return
     }
     if (message.type === 'shutdown') {
@@ -62,6 +69,7 @@ export function createAgent(
         init,
         signal,
         emit: (name, eventData) => port.postMessage({ type: 'event', name, data: eventData }),
+        takeSteers: () => steers.splice(0),
         waitReply: (id, timeoutMs) =>
           new Promise<Reply | undefined>((resolve) => {
             const done = (reply?: Reply) => {

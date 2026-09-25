@@ -17,11 +17,18 @@ import { WEB_APP, WEB_BUNDLE, WEB_PID } from '../browser/web'
 import type { ShadowGuess, ShadowPage } from '../jev/shadow'
 import { ToolInput, type ToolName } from './tools'
 
-export type Approval = { kind: 'action' | 'foreground' | 'budget'; title: string; reason: string; app?: string }
-/** 'run' allows this kind of step in this app for the rest of the run; only foreground delivery offers it. */
-export type Answer = 'once' | 'run' | 'deny'
+/** `appId` names the app for "Always" (bundle id, else its name); `text` is what a typing step would type, yours to edit. */
+export type Approval = { kind: 'action' | 'foreground' | 'budget'; title: string; reason: string; app?: string; appId?: string; text?: string }
+/**
+ * 'run' allows this kind of step in this app for the rest of the run; 'always' also asks JevAuto to remember the app.
+ * Only foreground delivery offers them: for anything else (a send, a submit, a budget) both count as once.
+ */
+export type Answer = 'once' | 'run' | 'always' | 'deny'
+/** Your answer, with the text you changed before it is typed. */
+export type Decision = Answer | { answer: Answer; text?: string }
 export type RunStatus = 'success' | 'failure' | 'blocked' | 'ended' | 'stopped' | 'budget' | 'stall' | 'refused' | 'error'
-export type RunResult = { status: RunStatus; summary: string; turns: number; actions: number; usd: number; ms: number }
+/** `unheard`: what you told JevAuto while it worked that arrived after its last step. */
+export type RunResult = { status: RunStatus; summary: string; turns: number; actions: number; usd: number; ms: number; unheard?: string[] }
 
 export type RunDeps = {
   task: string
@@ -30,7 +37,7 @@ export type RunDeps = {
   mac: Mac
   /** Where keystrokes go in a window (JevNative for apps, the page for web tabs); 'unknown' when it can't tell. */
   focus: (pid: number, windowId: number) => Promise<Focus | 'unknown'>
-  approve: (approval: Approval) => Promise<Answer>
+  approve: (approval: Approval) => Promise<Decision>
   ask: (question: string) => Promise<string | null>
   log: { write(event: string, data?: Record<string, unknown>): void }
   signal: AbortSignal
@@ -53,6 +60,18 @@ export type RunDeps = {
   allowPrivateUrls?: boolean
   /** Jev in shadow mode on web pages: guesses are logged beside the model's actions, never acted on. */
   shadow?: { guess(goal: string, page: ShadowPage): Promise<ShadowGuess | undefined> }
+  /** Apps (bundle ids, else names) you always allow to come forward for shortcuts; revocable in Settings. */
+  trusted?: string[]
+  /** Called when you answer "Always" to bringing an app forward. */
+  trust?: (app: { id: string; app: string }) => void
+  /** What you told JevAuto while it works, taken once each; it reaches the model with the next step. */
+  steer?: () => string[]
+  /**
+   * Full auto (your choice in Settings): JevAuto answers its own questions itself, so sends, submits and bringing an
+   * app forward go ahead, and a run stops at its budget instead of asking. The hard rules still refuse, and the model
+   * provider's own safety checks still ask you (their rules need a person to confirm).
+   */
+  auto?: boolean
 }
 
 const near = (a: number, b: number) => Math.abs(a - b) <= 2
@@ -119,20 +138,36 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
 
   const announce = (state: string, title: string, detail?: string) => d.emit?.('ui.status', { state, title, ...(detail ? { detail } : {}) })
   const finish = (status: RunStatus, summary: string): RunResult => {
-    const result = { status, summary, turns, actions: meter.actions, usd: Math.round(meter.usd * 10_000) / 10_000, ms: Math.round(now() - started) }
+    const unheard = d.steer?.() ?? []
+    const result = {
+      status,
+      summary,
+      turns,
+      actions: meter.actions,
+      usd: Math.round(meter.usd * 10_000) / 10_000,
+      ms: Math.round(now() - started),
+      ...(unheard.length ? { unheard } : {}),
+    }
     d.log.write('run.end', result)
     const state = status === 'stopped' ? 'stopped' : ['success', 'ended'].includes(status) ? 'done' : 'error'
     announce(state, state === 'done' ? 'Done' : state === 'stopped' ? 'Stopped' : 'Could not finish', summary)
     return result
   }
 
-  async function approval(a: Approval): Promise<Answer> {
+  /** Asks you, unless Full auto answers for you. `flagged`: the model provider's safety check is part of this step. */
+  async function approval(a: Approval, flagged = false): Promise<{ answer: Answer; text?: string }> {
+    if (d.auto && !flagged) {
+      const answer: Answer = a.kind === 'foreground' ? 'run' : 'once'
+      d.log.write('approval', { ...a, answer, auto: true })
+      return { answer }
+    }
     meter.pause()
     announce('needs-you', a.title, a.reason)
     try {
-      const answer = await d.approve(a)
-      d.log.write('approval', { ...a, answer })
-      return answer
+      const decision = await d.approve(a)
+      const { answer, text } = typeof decision === 'string' ? { answer: decision, text: undefined } : decision
+      d.log.write('approval', { ...a, answer, ...(text !== undefined && text !== a.text ? { edited: text } : {}) })
+      return { answer, ...(text !== undefined ? { text } : {}) }
     } finally {
       meter.resume()
       signal.throwIfAborted()
@@ -369,10 +404,26 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
     if (a.kind === 'type' && !onWeb(t) && !element && !focusInWindow(focus, obs.bounds))
       return { halt: `the text cursor is not in this ${t.app} window, so nothing was typed; click the field you want first` }
     let acknowledged: unknown[] | undefined
+    /** The text you typed over the model's, when you edited it in the approval (spec §9: the Edit path). */
+    let edited: string | undefined
     if (verdict.decision === 'ask') {
-      const answer = await approval({ kind: 'action', title: `${desc[0].toUpperCase()}${desc.slice(1)} in ${t.app}`, reason: verdict.reason, app: t.app })
+      const typing = a.kind === 'type' ? a.text : undefined
+      const { answer, text } = await approval(
+        {
+          kind: 'action',
+          title: `${desc[0].toUpperCase()}${desc.slice(1)} in ${t.app}`,
+          reason: verdict.reason,
+          app: t.app,
+          ...(typing !== undefined ? { text: typing } : {}),
+        },
+        safety.length > 0,
+      )
       if (answer === 'deny')
         return safety.length ? { stop: { status: 'stopped', summary: `You declined: ${desc}.` } } : { halt: `the user declined: ${desc}. Do not try another way to do this` }
+      if (typing !== undefined && text !== undefined && text !== typing) {
+        edited = text
+        plan = planType(text, { ...obs, target: t, snapshotId: snap.id, elements: snap.elements }, element)
+      }
       if (safety.length) acknowledged = safety
       // Re-resolve the target after the wait: what you approved must still be what gets clicked (spec §8).
       if (plan.kind === 'cua' && plan.point && element) {
@@ -397,15 +448,18 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
     // Modifier clicks and some drags are refused in the background (spec §4: "foreground, with your OK").
     const pointerRefused = POINTER.has(a.kind) && result !== undefined && !result.ok && result.code === 'background_unavailable'
     if (((a.kind === 'keys' || a.kind === 'type') && undelivered) || pointerRefused) {
-      let allowed = d.front === true || foreground.has(t.pid)
+      const appId = t.bundleId ?? t.app
+      let allowed = d.front === true || foreground.has(t.pid) || d.trusted?.includes(appId) === true
       if (!allowed) {
-        const answer = await approval({
+        const { answer } = await approval({
           kind: 'foreground',
           title: `Bring ${t.app} forward for a moment?`,
           reason: `${pointerRefused ? `This only works in ${t.app}` : `${shortcut ? 'Keyboard shortcuts' : 'Keys'} only reach ${t.app}`} while it is in front, so JevAuto brings it forward to ${desc}, then puts your app back.`,
           app: t.app,
+          appId,
         })
-        if (answer === 'run') foreground.add(t.pid)
+        if (answer === 'run' || answer === 'always') foreground.add(t.pid)
+        if (answer === 'always') d.trust?.({ id: appId, app: t.app })
         allowed = answer !== 'deny'
       }
       if (!allowed) return { halt: `the user did not allow bringing ${t.app} forward, so ${desc} was not run`, acknowledged }
@@ -417,6 +471,7 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
     if (!result.ok) return { halt: `${desc} failed: ${result.message ?? 'no reason given'}`, acknowledged, acted: false }
 
     const notes: string[] = []
+    if (edited !== undefined) notes.push(`The user changed the text before it was typed; typed instead: “${edited}”.`)
     if (plan.kind === 'noop' && a.kind !== 'screenshot') notes.push(plan.note)
     if (a.kind === 'type' && focus !== 'unknown' && focus?.webArea) notes.push('The app could not confirm the text arrived; check the screenshot.')
     let targetChanged = false
@@ -523,9 +578,11 @@ export async function runTask(d: RunDeps): Promise<RunResult> {
       else if (acted) stall = 0
       if (stall >= 3) return finish('stall', 'The window stopped changing after three rounds of actions, so JevAuto stopped.')
       if (stall > 0) notes.push('The window looks the same as before your last actions.')
+      for (const said of d.steer?.() ?? []) notes.push(`The user adds, while you work: “${said}”`)
       const over = meter.over()
       if (over) {
-        const answer = await approval({ kind: 'budget', title: 'Budget reached', reason: `This run used its ${LIMITS[over]} budget. Keep going?` })
+        if (d.auto) return finish('budget', `Stopped at the ${LIMITS[over]} budget (Full auto never extends it).`)
+        const { answer } = await approval({ kind: 'budget', title: 'Budget reached', reason: `This run used its ${LIMITS[over]} budget. Keep going?` })
         if (answer === 'deny') return finish('budget', `Stopped at the ${LIMITS[over]} budget.`)
         meter.extend(over)
       }
